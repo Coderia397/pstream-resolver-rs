@@ -1,0 +1,22 @@
+# Build config for the phone target.
+#
+# The resolver ships to a Pixel 8 running Termux as a single statically linked
+# aarch64 binary — no node, no node_modules, no npm on the device.
+#
+# musl rather than the android target so no NDK is needed: a fully static ELF
+# only makes syscalls, which Android's Linux kernel serves the same as any
+# other. C cross-compilation (rustls' crypto backend has native code) goes
+# through zig, which carries musl headers for every target.
+
+[target.aarch64-unknown-linux-musl]
+linker    = "rust-lld"
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+CC_aarch64_unknown_linux_musl = "/home/ibrahim/.local/bin/zig-cc-aarch64"
+AR_aarch64_unknown_linux_musl = "/home/ibrahim/.local/bin/zig-ar-aarch64"
+
+# The build host has 8GB of soldered RAM; unbounded parallelism during the
+# link step will OOM it.
+[build]
+jobs = 3
