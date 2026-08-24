@@ -52,31 +52,77 @@ pub async fn scrape(
 
     println!("[VixSrc] Probing {BASE}{api_path}");
 
+    /// Log which step gave up and return None.
+    ///
+    /// Worth the noise: this is a five-step chain over two requests, and a
+    /// bare `?` at each one means a failure is indistinguishable from any
+    /// other. Chasing a "no sources" report without this meant reproducing
+    /// the whole chain by hand — and the embed token expires in ~10 seconds,
+    /// so by the time you re-request it the evidence is gone.
+    macro_rules! step {
+        ($opt:expr, $what:literal) => {
+            match $opt {
+                Some(v) => v,
+                None => {
+                    println!("[VixSrc] ❌ {}", $what);
+                    return None;
+                }
+            }
+        };
+    }
+
     // 1. Ask the API where the embed lives.
     let mut h = headers();
     h.push(("Accept", "application/json"));
-    let api_body = get_text_with(&GIGA, &format!("{BASE}{api_path}"), Duration::from_secs(10), &h).await?;
+    let api_body = step!(
+        get_text_with(&GIGA, &format!("{BASE}{api_path}"), Duration::from_secs(10), &h).await,
+        "api request failed"
+    );
 
-    let api: serde_json::Value = serde_json::from_str(&api_body).ok()?;
-    let src = api.get("src")?.as_str()?;
+    let api: serde_json::Value = step!(
+        serde_json::from_str(&api_body).ok(),
+        "api response was not JSON"
+    );
+    let src = step!(
+        api.get("src").and_then(|v| v.as_str()),
+        "api response had no src"
+    );
     let embed_url = if src.starts_with("http") {
         src.to_string()
     } else {
         format!("{BASE}{src}")
     };
 
-    // 2. The real playlist token only exists inside the embed page.
+    // 2. The real playlist token only exists inside the embed page. This must
+    //    follow immediately — the token on the embed URL lives ~10 seconds,
+    //    and a stale one answers 410.
     let mut h = headers();
     h.push(("Accept", "text/html"));
-    let page = get_text_with(&GIGA, &embed_url, Duration::from_secs(12), &h).await?;
+    let page = step!(
+        get_text_with(&GIGA, &embed_url, Duration::from_secs(12), &h).await,
+        "embed page fetch failed (410 means the embed token already expired)"
+    );
 
-    let anchor = page.find("masterPlaylist")?;
+    let anchor = step!(page.find("masterPlaylist"), "no masterPlaylist in embed page");
     let block = &page[anchor..page.len().min(anchor + BLOCK_LEN)];
 
-    let token = TOKEN_RE.captures(block)?.get(1)?.as_str();
-    let expires = EXPIRES_RE.captures(block)?.get(1)?.as_str();
+    let token = step!(
+        TOKEN_RE.captures(block).and_then(|c| c.get(1)),
+        "no token in masterPlaylist block"
+    )
+    .as_str();
+    let expires = step!(
+        EXPIRES_RE.captures(block).and_then(|c| c.get(1)),
+        "no expires in masterPlaylist block"
+    )
+    .as_str();
     // The page escapes forward slashes inside the JS string literal.
-    let playlist = PLAYLIST_RE.captures(block)?.get(1)?.as_str().replace("\\/", "/");
+    let playlist = step!(
+        PLAYLIST_RE.captures(block).and_then(|c| c.get(1)),
+        "no playlist url in masterPlaylist block"
+    )
+    .as_str()
+    .replace("\\/", "/");
 
     // FHD is only offered when the embed URL says the title supports it.
     let fhd = embed_url.contains("canPlayFHD=1");
