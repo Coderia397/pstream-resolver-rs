@@ -12,7 +12,8 @@ use axum::{
     Json, Router,
 };
 use pstream_shared::{
-    cache, cors, extractors, proxy, ratelimit, subdl, youtube, MediaKind, ProviderResult,
+    cache, cors, extractors, probe, proxy, ratelimit, subdl, youtube, MediaKind,
+    ProviderResult,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -304,6 +305,7 @@ async fn main() {
         .route("/api/youtube/search", get(api_youtube))
         .route("/api/subtitles/subdl", get(api_subdl))
         .route("/proxy/stream", get(proxy::stream))
+        .route("/api/media-probe", get(probe::media_probe))
         .route("/api/deploy", post(api_deploy))
         .fallback(|method: Method, headers: HeaderMap, uri: axum::http::Uri| async move {
             if method == Method::OPTIONS {

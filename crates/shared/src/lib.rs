@@ -14,6 +14,7 @@ pub mod extractors;
 pub mod health;
 pub mod http;
 pub mod models;
+pub mod probe;
 pub mod proxy;
 pub mod ratelimit;
 pub mod subdl;
