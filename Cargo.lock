@@ -793,6 +793,17 @@ name = "pstream-resolver"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "pstream-shared",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "pstream-shared"
+version = "0.1.0"
+dependencies = [
+ "axum",
  "bytes",
  "futures",
  "once_cell",

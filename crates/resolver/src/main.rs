@@ -4,17 +4,6 @@
 //! no node_modules. Route surface and JSON shapes match the JS server, since
 //! the deployed frontend already talks to them.
 
-mod cache;
-mod cors;
-mod extractors;
-mod health;
-mod http;
-mod models;
-mod proxy;
-mod ratelimit;
-mod subdl;
-mod youtube;
-
 use axum::{
     extract::Query,
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
@@ -22,7 +11,9 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use models::{MediaKind, ProviderResult};
+use pstream_shared::{
+    cache, cors, extractors, proxy, ratelimit, subdl, youtube, MediaKind, ProviderResult,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;

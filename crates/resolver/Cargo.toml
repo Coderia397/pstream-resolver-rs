@@ -1,0 +1,17 @@
+[package]
+name    = "pstream-resolver"
+edition.workspace = true
+version.workspace = true
+description = "The pstream resolver that runs on the phone — one static aarch64-musl binary"
+
+[[bin]]
+name = "pstream-resolver"
+path = "src/main.rs"
+
+[dependencies]
+pstream-shared = { path = "../shared" }
+
+tokio.workspace      = true
+axum.workspace       = true
+serde.workspace      = true
+serde_json.workspace = true
