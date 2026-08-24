@@ -2,6 +2,8 @@
 name    = "pstream-resolver"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "The pstream resolver that runs on the phone — one static aarch64-musl binary"
 
 [[bin]]

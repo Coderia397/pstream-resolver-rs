@@ -1,0 +1,84 @@
+name: Build and publish the phone binary
+
+# The phone runs a static aarch64 binary, not source, so "deploy" means
+# getting a new binary onto the device. Before this, that was a manual adb
+# push — and the poller on the phone was still pulling the old JS repo, which
+# no longer has any relationship to what runs.
+#
+# This builds the binary on every push to main and publishes it to a rolling
+# `latest` release. The updater on the phone compares checksums and swaps it
+# in, so a push reaches the device without a cable.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create/replace the release
+
+concurrency:
+  group: release-binary
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust with the musl target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-unknown-linux-musl
+
+      # rustls' crypto backend has C in it, so cross-compiling needs a C
+      # compiler for the target. zig ships musl headers for every target it
+      # supports, which is why the local build uses it too — no NDK, no
+      # musl-cross toolchain to install.
+      - name: Install zig + cargo-zigbuild
+        run: |
+          pip install ziglang==0.13.0
+          cargo install cargo-zigbuild --locked
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Build
+        run: cargo zigbuild --release --locked --target aarch64-unknown-linux-musl
+
+      - name: Checksum and stage
+        id: stage
+        run: |
+          BIN=target/aarch64-unknown-linux-musl/release/pstream-resolver
+          file "$BIN"
+          # A dynamically linked binary would fail on the device with a
+          # confusing loader error, so refuse to publish one.
+          file "$BIN" | grep -q "statically linked" || {
+            echo "::error::binary is not statically linked"; exit 1; }
+          mkdir -p dist
+          cp "$BIN" dist/pstream-resolver-aarch64
+          sha256sum dist/pstream-resolver-aarch64 | cut -d' ' -f1 > dist/pstream-resolver-aarch64.sha256
+          echo "sha=$(cat dist/pstream-resolver-aarch64.sha256)" >> "$GITHUB_OUTPUT"
+          ls -la dist/
+
+      - name: Publish to the rolling `latest` release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest phone binary
+          body: |
+            Static aarch64-musl build of the phone resolver.
+
+            commit: ${{ github.sha }}
+            sha256: ${{ steps.stage.outputs.sha }}
+
+            The device updater polls this release and swaps the binary in when
+            the checksum changes.
+          files: |
+            dist/pstream-resolver-aarch64
+            dist/pstream-resolver-aarch64.sha256
+          # Move the tag so `latest` always points at this build.
+          make_latest: true
