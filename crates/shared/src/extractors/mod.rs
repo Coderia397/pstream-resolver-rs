@@ -19,6 +19,7 @@ pub mod lookmovie;
 pub mod moviebox;
 pub mod nontongo;
 pub mod vixsrc;
+pub mod cinemaos;
 
 /// Which shared client a provider goes out through. Most need the residential
 /// path because their CDNs block datacenter ranges; the ones on Cloudflare
@@ -73,111 +74,20 @@ const JSON_ACCEPT: &str = "application/json, text/plain, */*";
 /// gets named as the headline one in the response.
 pub static PROVIDERS: &[Provider] = &[
     Provider {
-        id: "watchflix",
-        // 2026-08-25: watchflix.st does not resolve at all (curl 000). Domain gone.
-        enabled: false,
-        name: "WatchFlix 🎬",
-        base: "https://watchflix.st",
-        movie_path: "/movie/{id}",
-        tv_path: "/tv/{id}/{season}/{episode}",
-        timeout_secs: 7,
-        max_sources: 3,
-        qualities: &["1080p", "auto"],
+        id: "cinemaos",
+        enabled: true,
+        name: "CinemaOS 🎥",
+        base: "https://cinemaos.live",
+        movie_path: "/watch/movie/{id}",
+        tv_path: "/watch/tv/{id}/{season}/{episode}",
+        timeout_secs: 15,
+        max_sources: 2,
+        qualities: &["1080p"],
         client: ClientKind::Proxy,
         accept: HTML_ACCEPT,
         send_referer: true,
         tag_source_referer: true,
         mark_not_embed: true,
-    },
-    Provider {
-        id: "bingr",
-        // 2026-08-25: alive, but /watch/movie/{id} lands on the homepage
-        //             (title "Bingr — Stream Movies…", no title text). Path shape changed.
-        enabled: false,
-        name: "Bingr 🚀",
-        base: "https://bingr.one",
-        movie_path: "/watch/movie/{id}",
-        tv_path: "/watch/tv/{id}/{season}/{episode}",
-        timeout_secs: 7,
-        max_sources: 3,
-        qualities: &["1080p", "720p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: true,
-        mark_not_embed: false,
-    },
-    Provider {
-        id: "fireflix",
-        // 2026-08-25: fireflix.pages.dev 302s to fireflix2.pages.dev, which 404s
-        //             on /api/movie?id=. Moved and changed its API shape.
-        enabled: false,
-        name: "FireFlix 🔥",
-        base: "https://fireflix.pages.dev",
-        movie_path: "/api/movie?id={id}",
-        tv_path: "/api/tv?id={id}&season={season}&episode={episode}",
-        timeout_secs: 6,
-        max_sources: 2,
-        qualities: &["1080p"],
-        client: ClientKind::Giga,
-        accept: JSON_ACCEPT,
-        send_referer: false,
-        tag_source_referer: false,
-        mark_not_embed: false,
-    },
-    Provider {
-        id: "oneshows",
-        // 2026-08-25: alive, but the page we fetch is an error page, not the title.
-        enabled: false,
-        name: "1Shows 📺",
-        base: "https://www.1shows.org",
-        movie_path: "/movie/{id}",
-        tv_path: "/tv/{id}/{season}/{episode}",
-        timeout_secs: 7,
-        max_sources: 3,
-        qualities: &["1080p", "720p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: false,
-        mark_not_embed: false,
-    },
-    Provider {
-        id: "cinemaos",
-        // 2026-08-25: URL is CORRECT — page title reads "Inception (2010) - Cinemaos".
-        //             The manifest is no longer in the HTML; the site loads it
-        //             client-side, so a plain regex sweep finds nothing.
-        enabled: false,
-        name: "CinemaOS 🎥",
-        base: "https://cinemaos.live",
-        movie_path: "/movie/{id}",
-        tv_path: "/tv/{id}/{season}/{episode}",
-        timeout_secs: 7,
-        max_sources: 2,
-        qualities: &["1080p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: false,
-        mark_not_embed: false,
-    },
-    Provider {
-        id: "aurorascreen",
-        // 2026-08-25: www.aurorascreen.org 301s to aurorascreen.org, which 404s on
-        //             /movie/{id}. Moved and changed its path shape.
-        enabled: false,
-        name: "AuroraScreen 🌌",
-        base: "https://www.aurorascreen.org",
-        movie_path: "/movie/{id}",
-        tv_path: "/tv/{id}/{season}/{episode}",
-        timeout_secs: 7,
-        max_sources: 2,
-        qualities: &["1080p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: false,
-        mark_not_embed: false,
     },
     Provider {
         // Anime; one URL shape regardless of movie/tv.
@@ -264,6 +174,7 @@ pub async fn run_all(
     }
 
     let vixsrc = timed(vixsrc::ID, vixsrc::scrape(tmdb_id, kind, season, episode));
+    let cinemaos = timed(cinemaos::ID, cinemaos::scrape(tmdb_id, kind, season, episode));
 
     // LookMovie and MovieBox both search by name, so they sit out entirely
     // when the caller didn't send a title.
@@ -298,12 +209,13 @@ pub async fn run_all(
         nontongo::scrape(tmdb_id, kind, season, episode),
     );
 
-    let (vixsrc, lookmovie, table, moviebox, nontongo) =
-        futures::join!(vixsrc, lookmovie, table, moviebox, nontongo);
+    let (vixsrc, cinemaos, lookmovie, table, moviebox, nontongo) =
+        futures::join!(vixsrc, cinemaos, lookmovie, table, moviebox, nontongo);
 
     // Order matches the JS list exactly: vixsrc, lookmovie, the nine table
     // providers, then moviebox and nontongo.
     std::iter::once(vixsrc)
+        .chain(std::iter::once(cinemaos))
         .chain(std::iter::once(lookmovie))
         .chain(table)
         .chain(std::iter::once(moviebox))
