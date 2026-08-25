@@ -1,0 +1,24 @@
+# Copy to ~/.pstream-env on the device and fill in. Never commit the real file.
+#
+#   cp pstream-env.example ~/.pstream-env
+#   chmod 600 ~/.pstream-env
+#
+# Every value is optional. Without one, the feature that needs it reports
+# itself unconfigured rather than the resolver failing to start.
+
+# SubDL subtitle search. Kept here rather than in the browser bundle: Vite
+# inlines any VITE_* value, so a key shipped to the frontend is readable by
+# anyone who views source.
+export SUBDL_API_KEY=''
+
+# Gates POST /api/deploy. Unset means that endpoint answers 404 rather than
+# 403, so an unconfigured device does not advertise that it exists.
+#
+# Largely vestigial now: deploys arrive through the GitHub Releases updater,
+# and there is no repo on the device left to `git pull`.
+export DEPLOY_SECRET=''
+
+# Residential egress for providers that block datacenter ranges. The phone is
+# already on a mobile IP, which is most of why the resolver lives there, so
+# this is normally left empty.
+export RESIDENTIAL_PROXY_URL=''
