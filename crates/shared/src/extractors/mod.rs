@@ -31,6 +31,17 @@ pub enum ClientKind {
 
 pub struct Provider {
     pub id: &'static str,
+    /// Whether this provider is queried at all.
+    ///
+    /// A disabled one is kept in the table rather than deleted, with a note
+    /// saying what was observed and when. Every entry here worked once, and a
+    /// provider that has gone dark often comes back — deleting it loses the
+    /// path shape, the headers it wants and the quality labels, all of which
+    /// then have to be rediscovered.
+    ///
+    /// Disabled providers cost nothing: `run_all` skips them, so they are not
+    /// one of the outbound requests every resolve pays for.
+    pub enabled: bool,
     /// Display name including the emoji the frontend renders.
     pub name: &'static str,
     pub base: &'static str,
@@ -63,6 +74,8 @@ const JSON_ACCEPT: &str = "application/json, text/plain, */*";
 pub static PROVIDERS: &[Provider] = &[
     Provider {
         id: "watchflix",
+        // 2026-08-25: watchflix.st does not resolve at all (curl 000). Domain gone.
+        enabled: false,
         name: "WatchFlix 🎬",
         base: "https://watchflix.st",
         movie_path: "/movie/{id}",
@@ -78,6 +91,9 @@ pub static PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: "bingr",
+        // 2026-08-25: alive, but /watch/movie/{id} lands on the homepage
+        //             (title "Bingr — Stream Movies…", no title text). Path shape changed.
+        enabled: false,
         name: "Bingr 🚀",
         base: "https://bingr.one",
         movie_path: "/watch/movie/{id}",
@@ -93,6 +109,9 @@ pub static PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: "fireflix",
+        // 2026-08-25: fireflix.pages.dev 302s to fireflix2.pages.dev, which 404s
+        //             on /api/movie?id=. Moved and changed its API shape.
+        enabled: false,
         name: "FireFlix 🔥",
         base: "https://fireflix.pages.dev",
         movie_path: "/api/movie?id={id}",
@@ -108,6 +127,8 @@ pub static PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: "oneshows",
+        // 2026-08-25: alive, but the page we fetch is an error page, not the title.
+        enabled: false,
         name: "1Shows 📺",
         base: "https://www.1shows.org",
         movie_path: "/movie/{id}",
@@ -123,6 +144,10 @@ pub static PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: "cinemaos",
+        // 2026-08-25: URL is CORRECT — page title reads "Inception (2010) - Cinemaos".
+        //             The manifest is no longer in the HTML; the site loads it
+        //             client-side, so a plain regex sweep finds nothing.
+        enabled: false,
         name: "CinemaOS 🎥",
         base: "https://cinemaos.live",
         movie_path: "/movie/{id}",
@@ -138,6 +163,9 @@ pub static PROVIDERS: &[Provider] = &[
     },
     Provider {
         id: "aurorascreen",
+        // 2026-08-25: www.aurorascreen.org 301s to aurorascreen.org, which 404s on
+        //             /movie/{id}. Moved and changed its path shape.
+        enabled: false,
         name: "AuroraScreen 🌌",
         base: "https://www.aurorascreen.org",
         movie_path: "/movie/{id}",
@@ -154,6 +182,9 @@ pub static PROVIDERS: &[Provider] = &[
     Provider {
         // Anime; one URL shape regardless of movie/tv.
         id: "miruro",
+        // 2026-08-25: alive; tested fairly with an anime id (1429) rather than a film.
+        //             Still no manifest in the HTML — loaded client-side.
+        enabled: false,
         name: "Miruro Anime 🌸",
         base: "https://www.miruro.com",
         movie_path: "/watch?id={id}",
@@ -170,6 +201,8 @@ pub static PROVIDERS: &[Provider] = &[
     Provider {
         // Series only — the JS uses the episode URL for both cases.
         id: "bstsrs",
+        // 2026-08-25: no sources across the sample. Not investigated individually.
+        enabled: false,
         name: "BSTSrs Series 📺",
         base: "https://bstsrs.in",
         movie_path: "/show/{id}/season/{season}/episode/{episode}",
@@ -186,6 +219,8 @@ pub static PROVIDERS: &[Provider] = &[
     Provider {
         // Asian drama; episode-addressed, no season in the path.
         id: "dramacool",
+        // 2026-08-25: no sources across the sample. Not investigated individually.
+        enabled: false,
         name: "DramaCool 🎭",
         base: "https://dramacoolv.buzz",
         movie_path: "/drama/{id}-episode-{episode}.html",
@@ -241,9 +276,13 @@ pub async fn run_all(
         }
     };
 
+    // Disabled providers are skipped entirely rather than queried and ignored.
+    // Every resolve pays for each outbound request in latency and, on a phone,
+    // in mobile data — nine dead ones were costing both on every single call.
     let table = futures::future::join_all(
         PROVIDERS
             .iter()
+            .filter(|p| p.enabled)
             .map(|p| timed(p.id, p.scrape(tmdb_id, kind, season, episode))),
     );
 
@@ -414,6 +453,18 @@ mod tests {
         for p in PROVIDERS {
             assert!(!p.qualities.is_empty(), "{} has no qualities", p.id);
             assert!(p.max_sources > 0, "{} keeps no sources", p.id);
+        }
+    }
+
+    #[test]
+    fn a_disabled_provider_still_carries_a_usable_config() {
+        // Disabled entries are kept so they can be switched back on when a
+        // provider returns. That is only worth doing if the config survives
+        // intact — otherwise re-enabling means rediscovering it anyway.
+        for p in PROVIDERS.iter().filter(|p| !p.enabled) {
+            assert!(p.base.starts_with("http"), "{} lost its base url", p.id);
+            assert!(p.movie_path.contains("{id}"), "{} lost its movie path", p.id);
+            assert!(!p.name.is_empty(), "{} lost its name", p.id);
         }
     }
 

@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use pstream_shared::{
-    cache, cors, extractors, probe, proxy, ratelimit, subdl, youtube, MediaKind,
+    cache, cors, extractors, health, probe, proxy, ratelimit, subdl, youtube, MediaKind,
     ProviderResult,
 };
 use serde::Deserialize;
@@ -151,6 +151,51 @@ async fn api_stream(headers: HeaderMap, Query(q): Query<StreamQuery>) -> Respons
 
     cache::put(cache_key, payload.clone(), CACHE_TTL);
     ok_json(&headers, payload)
+}
+
+// ── /api/providers/health ────────────────────────────────────────────────────
+
+/// Which providers are on, and how each has actually been doing.
+///
+/// Exists because a provider going dark is otherwise invisible: `run_all`
+/// treats "no sources" and "site is gone" identically, so nine of them can
+/// stop working and the only symptom is that results quietly get thinner.
+/// The counters are in-memory, so they describe this process since it started.
+async fn api_providers_health(headers: HeaderMap) -> Response {
+    let stats: std::collections::HashMap<&str, health::Stats> =
+        health::snapshot().into_iter().collect();
+
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+    let mut push = |id: &str, name: &str, enabled: bool, note: &str| {
+        let s = stats.get(id).copied().unwrap_or_default();
+        let attempts = s.ok + s.fail;
+        rows.push(json!({
+            "id": id,
+            "name": name,
+            "enabled": enabled,
+            "ok": s.ok,
+            "fail": s.fail,
+            "successRate": if attempts == 0 { serde_json::Value::Null }
+                           else { json!((s.ok as f64 / attempts as f64 * 100.0).round()) },
+            "lastMs": s.last_ms,
+            "note": note,
+        }));
+    };
+
+    for p in extractors::PROVIDERS {
+        push(p.id, p.name, p.enabled, "");
+    }
+    // The four with bespoke logic aren't in the table.
+    push(extractors::vixsrc::ID, "VixSrc ⚡", true, "");
+    push(extractors::lookmovie::ID, "LookMovie 🎬", true, "IP-bound: its streams must go through /proxy/stream");
+    push(extractors::moviebox::ID, "MovieBox 📦", true, "");
+    push(extractors::nontongo::ID, "NontonGo 🍿", true, "");
+
+    let enabled = rows.iter().filter(|r| r["enabled"] == json!(true)).count();
+    ok_json(
+        &headers,
+        json!({ "enabled": enabled, "total": rows.len(), "providers": rows }),
+    )
 }
 
 // ── /api/youtube/search ──────────────────────────────────────────────────────
@@ -304,6 +349,7 @@ async fn main() {
         .route("/api/stream", get(api_stream))
         .route("/api/youtube/search", get(api_youtube))
         .route("/api/subtitles/subdl", get(api_subdl))
+        .route("/api/providers/health", get(api_providers_health))
         .route("/proxy/stream", get(proxy::stream))
         .route("/api/media-probe", get(probe::media_probe))
         .route("/api/deploy", post(api_deploy))
