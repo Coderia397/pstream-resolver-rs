@@ -81,12 +81,6 @@ impl Source {
         self
     }
 
-    /// Force the source through /proxy/stream — needed when the upstream
-    /// binds stream URLs to the requesting IP, so visitors can't fetch direct.
-    pub fn proxied(mut self) -> Self {
-        self.no_proxy = false;
-        self
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

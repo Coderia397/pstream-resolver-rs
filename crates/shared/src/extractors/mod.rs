@@ -15,7 +15,7 @@ use crate::http::{GIGA, PROXY};
 use crate::models::{MediaKind, ProviderResult, Source};
 use std::time::Duration;
 
-pub mod lookmovie;
+
 pub mod moviebox;
 pub mod nontongo;
 pub mod vixsrc;
@@ -176,17 +176,8 @@ pub async fn run_all(
     let vixsrc = timed(vixsrc::ID, vixsrc::scrape(tmdb_id, kind, season, episode));
     let cinemaos = timed(cinemaos::ID, cinemaos::scrape(tmdb_id, kind, season, episode));
 
-    // LookMovie and MovieBox both search by name, so they sit out entirely
+    // MovieBox searches by name, so it sits out entirely
     // when the caller didn't send a title.
-    let lookmovie = async {
-        match title {
-            Some(t) if !t.is_empty() => {
-                timed(lookmovie::ID, lookmovie::scrape(kind, season, episode, t, year)).await
-            }
-            _ => None,
-        }
-    };
-
     // Disabled providers are skipped entirely rather than queried and ignored.
     // Every resolve pays for each outbound request in latency and, on a phone,
     // in mobile data — nine dead ones were costing both on every single call.
@@ -209,14 +200,13 @@ pub async fn run_all(
         nontongo::scrape(tmdb_id, kind, season, episode),
     );
 
-    let (vixsrc, cinemaos, lookmovie, table, moviebox, nontongo) =
-        futures::join!(vixsrc, cinemaos, lookmovie, table, moviebox, nontongo);
+    let (vixsrc, cinemaos, table, moviebox, nontongo) =
+        futures::join!(vixsrc, cinemaos, table, moviebox, nontongo);
 
-    // Order matches the JS list exactly: vixsrc, lookmovie, the nine table
+    // Order matches the JS list exactly: vixsrc, cinemaos, the nine table
     // providers, then moviebox and nontongo.
     std::iter::once(vixsrc)
         .chain(std::iter::once(cinemaos))
-        .chain(std::iter::once(lookmovie))
         .chain(table)
         .chain(std::iter::once(moviebox))
         .chain(std::iter::once(nontongo))

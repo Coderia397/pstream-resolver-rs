@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use pstream_shared::{
-    cache, cors, extractors, health, probe, proxy, ratelimit, subdl, youtube, MediaKind,
+    cache, cors, extractors, health, probe, ratelimit, subdl, youtube, MediaKind,
     ProviderResult,
 };
 use serde::Deserialize;
@@ -185,9 +185,8 @@ async fn api_providers_health(headers: HeaderMap) -> Response {
     for p in extractors::PROVIDERS {
         push(p.id, p.name, p.enabled, "");
     }
-    // The four with bespoke logic aren't in the table.
+    // The three with bespoke logic aren't in the table.
     push(extractors::vixsrc::ID, "VixSrc ⚡", true, "");
-    push(extractors::lookmovie::ID, "LookMovie 🎬", true, "IP-bound: its streams must go through /proxy/stream");
     push(extractors::moviebox::ID, "MovieBox 📦", true, "");
     push(extractors::nontongo::ID, "NontonGo 🍿", true, "");
 
@@ -350,7 +349,7 @@ async fn main() {
         .route("/api/youtube/search", get(api_youtube))
         .route("/api/subtitles/subdl", get(api_subdl))
         .route("/api/providers/health", get(api_providers_health))
-        .route("/proxy/stream", get(proxy::stream))
+
         .route("/api/media-probe", get(probe::media_probe))
         .route("/api/deploy", post(api_deploy))
         .fallback(|method: Method, headers: HeaderMap, uri: axum::http::Uri| async move {

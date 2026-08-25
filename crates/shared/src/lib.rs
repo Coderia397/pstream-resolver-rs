@@ -1,8 +1,8 @@
 //! Shared between the phone resolver and the giga backend.
 //!
 //! Everything here is service-agnostic: the provider extractors, the HTTP
-//! clients they go out through, the streaming proxy and its m3u8 rewriter,
-//! the resolve cache, and the CORS and rate-limit policy.
+//! clients they go out through, the resolve cache, and the CORS and rate-limit
+//! policy.
 //!
 //! It lives in one crate so the 13 extractors exist in exactly one place.
 //! Providers change their markup often; two copies would drift, and the copy
@@ -15,7 +15,7 @@ pub mod health;
 pub mod http;
 pub mod models;
 pub mod probe;
-pub mod proxy;
+
 pub mod ratelimit;
 pub mod subdl;
 pub mod youtube;
