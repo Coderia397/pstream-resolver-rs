@@ -383,9 +383,8 @@ mod tests {
     #[test]
     fn short_name_drops_the_emoji() {
         let by_id = |id: &str| PROVIDERS.iter().find(|p| p.id == id).unwrap();
-        assert_eq!(by_id("watchflix").short_name(), "WatchFlix");
+        assert_eq!(by_id("cinemaos").short_name(), "CinemaOS");
         assert_eq!(by_id("miruro").short_name(), "Miruro Anime");
         assert_eq!(by_id("bstsrs").short_name(), "BSTSrs Series");
-        assert_eq!(by_id("oneshows").short_name(), "1Shows");
     }
 }

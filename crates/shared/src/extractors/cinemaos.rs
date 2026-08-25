@@ -3,7 +3,7 @@
 use crate::http::PROXY;
 use crate::models::{MediaKind, ProviderResult, Source};
 use aes_gcm::aead::{Aead, KeyInit, Payload};
-use aes_gcm::Aes256Gcm;
+use aes_gcm::{AesGcm, aes::Aes256};
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, REFERER, USER_AGENT};
@@ -76,7 +76,9 @@ fn decrypt_data(data: &Value) -> Option<Value> {
         hasher.finalize().to_vec()
     };
 
-    let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
+    // 16-byte nonce requires custom typenum instead of default Aes256Gcm (which is 12 bytes)
+    type Aes256Gcm16 = AesGcm<Aes256, aes_gcm::aead::consts::U16>;
+    let cipher = Aes256Gcm16::new_from_slice(&key).ok()?;
     
     // In AES-GCM, the authentication tag is appended to the ciphertext
     let mut ciphertext = encrypted.clone();
@@ -162,3 +164,5 @@ pub async fn scrape(
 
     ProviderResult::some_if_any(NAME, ID, streams)
 }
+
+
