@@ -188,7 +188,12 @@ async fn api_providers_health(headers: HeaderMap) -> Response {
     // The three with bespoke logic aren't in the table.
     push(extractors::vixsrc::ID, "VixSrc ⚡", true, "");
     push(extractors::moviebox::ID, "MovieBox 📦", true, "");
-    push(extractors::nontongo::ID, "NontonGo 🍿", true, "");
+    push(
+        extractors::nontongo::ID,
+        "NontonGo 🍿",
+        false,
+        "Disabled: 504 Gateway Timeout",
+    );
 
     let enabled = rows.iter().filter(|r| r["enabled"] == json!(true)).count();
     ok_json(
@@ -379,3 +384,24 @@ async fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numeric_validation_works() {
+        assert!(is_numeric_within("12345", 10));
+        assert!(!is_numeric_within("", 10));
+        assert!(!is_numeric_within("123a", 10));
+        assert!(!is_numeric_within("12345678901", 10));
+    }
+
+    #[tokio::test]
+    async fn providers_health_reports_expected_status() {
+        let headers = HeaderMap::new();
+        let resp = api_providers_health(headers).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+}
+

@@ -65,7 +65,7 @@ pub struct Provider {
 }
 
 const HTML_ACCEPT: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-const JSON_ACCEPT: &str = "application/json, text/plain, */*";
+pub const JSON_ACCEPT: &str = "application/json, text/plain, */*";
 
 /// Every provider `/api/stream` queries, in the order the JS lists them.
 ///
@@ -198,10 +198,7 @@ pub async fn run_all(
         }
     };
 
-    let nontongo = timed(
-        nontongo::ID,
-        nontongo::scrape(tmdb_id, kind, season, episode),
-    );
+    let nontongo = async { None }; // Disabled 2026-08-26: returning 504 Gateway Timeout
 
     let (vixsrc, cinemaos, table, moviebox, nontongo) =
         futures::join!(vixsrc, cinemaos, table, moviebox, nontongo);
