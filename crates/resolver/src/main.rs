@@ -40,6 +40,10 @@ async fn ping(headers: HeaderMap) -> Response {
     ok_json(&headers, json!({ "ok": true, "service": "local-resolver" }))
 }
 
+async fn api_version(headers: HeaderMap) -> Response {
+    ok_json(&headers, json!({ "version": env!("GIT_HASH") }))
+}
+
 // ── /api/stream ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -186,6 +190,9 @@ async fn api_providers_health(headers: HeaderMap) -> Response {
         push(p.id, p.name, p.enabled, "");
     }
     // The three with bespoke logic aren't in the table.
+    push(extractors::miruro::ID, "Miruro 🦊", true, "");
+    push(extractors::bstsrs::ID, "BSTSrs 🍿", true, "");
+    push(extractors::dramacool::ID, "DramaCool 🍿", true, "");
     push(extractors::vixsrc::ID, "VixSrc ⚡", true, "");
     push(extractors::moviebox::ID, "MovieBox 📦", true, "");
     push(
@@ -350,6 +357,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(ping))
         .route("/api/ping", get(ping))
+        .route("/api/version", get(api_version))
         .route("/api/stream", get(api_stream))
         .route("/api/youtube/search", get(api_youtube))
         .route("/api/subtitles/subdl", get(api_subdl))
