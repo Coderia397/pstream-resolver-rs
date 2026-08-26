@@ -75,7 +75,10 @@ const JSON_ACCEPT: &str = "application/json, text/plain, */*";
 pub static PROVIDERS: &[Provider] = &[
     Provider {
         id: "cinemaos",
-        enabled: true,
+        // 2026-08-26: Disabled here because it has a bespoke API scraper (cinemaos::scrape)
+        // that handles the AES-GCM encrypted API response. Leaving this enabled causes
+        // a duplicate DOM request to cinemaos.live on every resolve.
+        enabled: false,
         name: "CinemaOS 🎥",
         base: "https://cinemaos.live",
         movie_path: "/watch/movie/{id}",
