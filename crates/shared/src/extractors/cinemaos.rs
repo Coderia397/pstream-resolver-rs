@@ -153,14 +153,24 @@ pub async fn scrape(
 
     let sources = scrape_data.get("sources")?.as_object()?;
     
-    // Extract the highest resolution or the first available stream.
-    let mut streams = Vec::new();
+    // Extract the available streams.
+    let mut parsed_streams: Vec<(u32, Source)> = Vec::new();
     for (quality, info) in sources {
         if let Some(url) = info.get("url").and_then(|v| v.as_str()) {
             let res = format!("{}p", quality);
-            streams.push(Source::direct_m3u8(url, &res));
+            let mut s = Source::direct_m3u8(url, &res).tagged("CinemaOS", ID);
+            s = s.with_referer(BASE).not_embed();
+            
+            // Try to parse the quality string as a number for sorting (e.g. "1080" -> 1080)
+            let q_num = quality.parse::<u32>().unwrap_or(0);
+            parsed_streams.push((q_num, s));
         }
     }
+
+    // Sort by quality descending (e.g. 1080p > 720p > 480p)
+    parsed_streams.sort_by(|a, b| b.0.cmp(&a.0));
+    
+    let streams: Vec<Source> = parsed_streams.into_iter().map(|(_, s)| s).collect();
 
     ProviderResult::some_if_any(NAME, ID, streams)
 }
