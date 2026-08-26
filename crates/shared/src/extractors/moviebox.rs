@@ -21,6 +21,8 @@ use std::time::Duration;
 const NAME: &str = "MovieBox 🍿";
 pub const ID: &str = "moviebox";
 const SEARCH_API: &str = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/search";
+const SEARCH_ORIGIN: &str = "https://h5.aoneroom.com";
+const SEARCH_REFERER: &str = "https://h5.aoneroom.com/";
 const DETAIL_BASE: &str = "https://movieboxonline.net/movies";
 const REFERER: &str = "https://movieboxonline.net/";
 
@@ -139,8 +141,8 @@ pub async fn scrape(title: &str, year: Option<u32>) -> Option<ProviderResult> {
         .post(SEARCH_API)
         .header("Content-Type", "application/json")
         .header("Accept", JSON_ACCEPT)
-        .header("Origin", "https://movieboxonline.net")
-        .header("Referer", REFERER)
+        .header("Origin", SEARCH_ORIGIN)
+        .header("Referer", SEARCH_REFERER)
         .timeout(Duration::from_secs(8))
         .json(&search_body)
         .send()

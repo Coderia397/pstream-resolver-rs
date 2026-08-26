@@ -16,10 +16,13 @@ use crate::models::{MediaKind, ProviderResult, Source};
 use std::time::Duration;
 
 
+pub mod bstsrs;
+pub mod cinemaos;
+pub mod dramacool;
+pub mod miruro;
 pub mod moviebox;
 pub mod nontongo;
 pub mod vixsrc;
-pub mod cinemaos;
 
 /// Which shared client a provider goes out through. Most need the residential
 /// path because their CDNs block datacenter ranges; the ones on Cloudflare
@@ -92,61 +95,6 @@ pub static PROVIDERS: &[Provider] = &[
         tag_source_referer: true,
         mark_not_embed: true,
     },
-    Provider {
-        // Anime; one URL shape regardless of movie/tv.
-        id: "miruro",
-        // 2026-08-25: alive; tested fairly with an anime id (1429) rather than a film.
-        //             Still no manifest in the HTML — loaded client-side.
-        enabled: false,
-        name: "Miruro Anime 🌸",
-        base: "https://www.miruro.com",
-        movie_path: "/watch?id={id}",
-        tv_path: "/watch?id={id}",
-        timeout_secs: 7,
-        max_sources: 2,
-        qualities: &["1080p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: false,
-        mark_not_embed: false,
-    },
-    Provider {
-        // Series only — the JS uses the episode URL for both cases.
-        id: "bstsrs",
-        // 2026-08-25: no sources across the sample. Not investigated individually.
-        enabled: false,
-        name: "BSTSrs Series 📺",
-        base: "https://bstsrs.in",
-        movie_path: "/show/{id}/season/{season}/episode/{episode}",
-        tv_path: "/show/{id}/season/{season}/episode/{episode}",
-        timeout_secs: 7,
-        max_sources: 2,
-        qualities: &["720p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: false,
-        mark_not_embed: false,
-    },
-    Provider {
-        // Asian drama; episode-addressed, no season in the path.
-        id: "dramacool",
-        // 2026-08-25: no sources across the sample. Not investigated individually.
-        enabled: false,
-        name: "DramaCool 🎭",
-        base: "https://dramacoolv.buzz",
-        movie_path: "/drama/{id}-episode-{episode}.html",
-        tv_path: "/drama/{id}-episode-{episode}.html",
-        timeout_secs: 8,
-        max_sources: 2,
-        qualities: &["720p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: false,
-        mark_not_embed: false,
-    },
 ];
 
 /// Query every provider concurrently and return each one that produced
@@ -178,6 +126,9 @@ pub async fn run_all(
 
     let vixsrc = timed(vixsrc::ID, vixsrc::scrape(tmdb_id, kind, season, episode));
     let cinemaos = timed(cinemaos::ID, cinemaos::scrape(tmdb_id, kind, season, episode));
+    let bstsrs = timed(bstsrs::ID, bstsrs::scrape(tmdb_id, kind, season, episode, title));
+    let dramacool = timed(dramacool::ID, dramacool::scrape(tmdb_id, kind, season, episode, title));
+    let miruro = timed(miruro::ID, miruro::scrape(tmdb_id, kind, season, episode, title));
 
     // MovieBox searches by name, so it sits out entirely
     // when the caller didn't send a title.
@@ -200,13 +151,16 @@ pub async fn run_all(
 
     let nontongo = async { None }; // Disabled 2026-08-26: returning 504 Gateway Timeout
 
-    let (vixsrc, cinemaos, table, moviebox, nontongo) =
-        futures::join!(vixsrc, cinemaos, table, moviebox, nontongo);
+    let (vixsrc, cinemaos, bstsrs, dramacool, miruro, table, moviebox, nontongo) =
+        futures::join!(vixsrc, cinemaos, bstsrs, dramacool, miruro, table, moviebox, nontongo);
 
-    // Order matches the JS list exactly: vixsrc, cinemaos, the nine table
-    // providers, then moviebox and nontongo.
+    // Order matches the JS list: vixsrc, cinemaos, bstsrs, dramacool, miruro,
+    // then table providers, moviebox, and nontongo.
     std::iter::once(vixsrc)
         .chain(std::iter::once(cinemaos))
+        .chain(std::iter::once(bstsrs))
+        .chain(std::iter::once(dramacool))
+        .chain(std::iter::once(miruro))
         .chain(table)
         .chain(std::iter::once(moviebox))
         .chain(std::iter::once(nontongo))
@@ -372,9 +326,22 @@ mod tests {
 
     #[test]
     fn short_name_drops_the_emoji() {
-        let by_id = |id: &str| PROVIDERS.iter().find(|p| p.id == id).unwrap();
-        assert_eq!(by_id("cinemaos").short_name(), "CinemaOS");
-        assert_eq!(by_id("miruro").short_name(), "Miruro Anime");
-        assert_eq!(by_id("bstsrs").short_name(), "BSTSrs Series");
+        let p = Provider {
+            id: "dummy",
+            enabled: false,
+            name: "Miruro Anime 🌸",
+            base: "",
+            movie_path: "",
+            tv_path: "",
+            timeout_secs: 0,
+            max_sources: 0,
+            qualities: &[],
+            client: ClientKind::Proxy,
+            accept: "",
+            send_referer: false,
+            tag_source_referer: false,
+            mark_not_embed: false,
+        };
+        assert_eq!(p.short_name(), "Miruro Anime");
     }
 }

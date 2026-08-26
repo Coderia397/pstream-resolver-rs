@@ -62,6 +62,22 @@ impl Source {
         }
     }
 
+    /// An embed / iframe video source.
+    pub fn embed(url: impl Into<String>, quality: impl Into<String>) -> Self {
+        let u = url.into();
+        let is_m3u8 = u.contains(".m3u8");
+        Self {
+            url: u,
+            quality: quality.into(),
+            is_m3u8,
+            no_proxy: true,
+            provider: None,
+            provider_id: None,
+            referer: None,
+            is_embed: Some(true),
+        }
+    }
+
     /// Attach the page the manifest came from, for hosts that check Referer.
     pub fn with_referer(mut self, referer: impl Into<String>) -> Self {
         self.referer = Some(referer.into());
