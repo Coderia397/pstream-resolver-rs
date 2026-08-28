@@ -1,4 +1,4 @@
-//! DramaCool — bespoke extractor for DramaCool (`https://dramacool.top`).
+//! DramaCool — bespoke extractor for DramaCool (`https://ww1.dramacool.cx`).
 //!
 //! DramaCool hosts Asian dramas, movies, and shows with slug-based routing:
 //! - Episode streams: `/{slug}-episode-{episode}.html`
@@ -17,10 +17,10 @@ use std::time::Duration;
 
 const NAME: &str = "DramaCool 🎭";
 pub const ID: &str = "dramacool";
-const BASE: &str = "https://dramacool.top";
+const BASE: &str = "https://ww1.dramacool.cx";
 
 static LINKSERVER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"<li[^>]*\bclass\s*=\s*["'][^"']*\blinkserver\b[^"']*["'][^>]*\bdata-video\s*=\s*["']([^"']+)["']"#)
+    Regex::new(r#"(?i)<li[^>]*\bclass\s*=\s*["'][^"']*(?:linkserver|server)[^"']*["'][^>]*\bdata-video\s*=\s*["']([^"']+)["']"#)
         .expect("linkserver regex")
 });
 
@@ -33,12 +33,12 @@ static IFRAME_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 static SEARCH_RESULT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"href\s*=\s*["'](?:https?://dramacool\.top)?/([^"'/]+-episode-\d+\.html|drama-detail/[^"'/]+|[^"'/]+\.html)["'][^>]*>(?:<h3[^>]*>)?([^<]+)"#)
+    Regex::new(r#"href\s*=\s*["'](?:https?://[^"'/]+)?/([^"'/]+-episode-\d+\.html|drama-detail/[^"'/]+|[^"'/]+\.html)["'][^>]*>(?:<h3[^>]*>)?([^<]+)"#)
         .expect("search result regex")
 });
 
 static SEARCH_DRAMA_DETAIL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"href\s*=\s*["'](?:https?://dramacool\.top)?/drama-detail/([a-zA-Z0-9-]+)["']"#)
+    Regex::new(r#"href\s*=\s*["'](?:https?://[^"'/]+)?/drama-detail/([a-zA-Z0-9-]+)["']"#)
         .expect("drama detail regex")
 });
 
@@ -200,36 +200,75 @@ pub fn extract_sources_from_html(html: &str) -> Vec<Source> {
 
 /// Parse search response HTML to find best drama slug matching title.
 pub fn parse_search_slug(html: &str, title: &str) -> Option<String> {
-    // Check for direct drama-detail links first
+    let target_slug = slugify(title);
+    let mut candidates: Vec<String> = Vec::new();
+
+    // 1. Collect direct drama-detail links
     for caps in SEARCH_DRAMA_DETAIL_RE.captures_iter(html) {
         if let Some(slug_match) = caps.get(1) {
             let slug = slug_match.as_str().trim();
-            if !slug.is_empty() {
-                return Some(slug.to_string());
+            if !slug.is_empty() && !candidates.iter().any(|c| c.as_str() == slug) {
+                candidates.push(slug.to_string());
             }
         }
     }
 
-    // Check generic search results with title matching
-    let target_slug = slugify(title);
+    // 2. Check generic search results with title matching
     for caps in SEARCH_RESULT_RE.captures_iter(html) {
         if let (Some(path_match), Some(title_match)) = (caps.get(1), caps.get(2)) {
             let path = path_match.as_str();
             let result_title = title_match.as_str().trim();
             let result_slug = slugify(result_title);
 
-            if result_slug.contains(&target_slug) || target_slug.contains(&result_slug) {
+            if result_slug == target_slug
+                || result_slug.contains(&target_slug)
+                || target_slug.contains(&result_slug)
+            {
                 if let Some(detail_slug) = path.strip_prefix("drama-detail/") {
-                    return Some(detail_slug.trim_matches('/').to_string());
-                }
-                if let Some(ep_slug) = path.split("-episode-").next() {
-                    return Some(ep_slug.trim_start_matches('/').to_string());
+                    let s = detail_slug.trim_matches('/').to_string();
+                    if !candidates.iter().any(|c| c.as_str() == s.as_str()) {
+                        candidates.push(s);
+                    }
+                } else if let Some(ep_slug) = path.split("-episode-").next() {
+                    let s = ep_slug.trim_start_matches('/').to_string();
+                    if !candidates.iter().any(|c| c.as_str() == s.as_str()) {
+                        candidates.push(s);
+                    }
                 }
             }
         }
     }
 
-    None
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // Exact match first
+    if let Some(exact) = candidates.iter().find(|s| s.as_str() == target_slug.as_str()) {
+        return Some(exact.clone());
+    }
+
+    // If target doesn't specify a season, prefer a candidate that also doesn't specify a season
+    if !target_slug.contains("season") {
+        if let Some(no_season) = candidates.iter().find(|s| {
+            (s.contains(&target_slug)
+                || target_slug.contains(s.as_str())
+                || s.replace("the-", "").starts_with(&target_slug))
+                && !s.contains("season")
+        }) {
+            return Some(no_season.clone());
+        }
+    }
+
+    // Fallback: candidate containing target_slug or target_slug containing candidate
+    if let Some(matched) = candidates.iter().find(|s| {
+        s.contains(&target_slug) || target_slug.contains(s.as_str())
+    }) {
+        return Some(matched.clone());
+    }
+
+    // Otherwise first candidate
+    candidates.into_iter().next()
 }
 
 /// Fallback search on DramaCool to discover drama slug.
@@ -436,5 +475,57 @@ mod tests {
 
         let slug = parse_search_slug(html, "Squid Game");
         assert_eq!(slug, Some("squid-game".to_string()));
+    }
+
+    #[test]
+    fn extracts_server_tabs_with_standard_server_class() {
+        let html = r#"
+        <div class="block watch-drama">
+            <div class="watch_video watch-iframe">
+                <iframe allowfullscreen src="//vidbasic.top/embed/4j8bf92mw"></iframe>
+            </div>
+            <div class="muti_link">
+                <ul>
+                    <li class="Standard Server selected" data-video="https://vidbasic.top/embed/4j8bf92mw">Standard Server</li>
+                </ul>
+            </div>
+        </div>
+        "#;
+
+        let sources = extract_sources_from_html(html);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].url, "https://vidbasic.top/embed/4j8bf92mw");
+        assert_eq!(sources[0].is_embed, Some(true));
+        assert_eq!(sources[0].provider.as_deref(), Some("DramaCool"));
+        assert_eq!(sources[0].provider_id.as_deref(), Some("dramacool"));
+    }
+
+    #[test]
+    fn parses_domain_agnostic_search_slug_and_links() {
+        let html = r#"
+        <ul class="switch-block list-episode-item">
+            <li>
+                <a href="https://ww1.dramacool.cx/drama-detail/squid-game-season-3" class="img" title="Squid Game Season 3 (2025)">
+                    <h3 class="title">Squid Game Season 3 (2025)</h3>
+                </a>
+            </li>
+            <li>
+                <a href="https://ww1.dramacool.cx/drama-detail/squid-game-season-2" class="img" title="Squid Game Season 2 (2024)">
+                    <h3 class="title">Squid Game Season 2 (2024)</h3>
+                </a>
+            </li>
+            <li>
+                <a href="https://ww1.dramacool.cx/drama-detail/the-squid-games" class="img" title="Squid Games (2021)">
+                    <h3 class="title">Squid Games (2021)</h3>
+                </a>
+            </li>
+        </ul>
+        "#;
+
+        let slug = parse_search_slug(html, "Squid Game");
+        assert_eq!(slug, Some("the-squid-games".to_string()));
+
+        let s2_slug = parse_search_slug(html, "Squid Game Season 2");
+        assert_eq!(s2_slug, Some("squid-game-season-2".to_string()));
     }
 }

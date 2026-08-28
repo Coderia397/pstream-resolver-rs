@@ -128,7 +128,7 @@ pub async fn run_all(
     let cinemaos = timed(cinemaos::ID, cinemaos::scrape(tmdb_id, kind, season, episode));
     let bstsrs = timed(bstsrs::ID, bstsrs::scrape(tmdb_id, kind, season, episode, title));
     let dramacool = timed(dramacool::ID, dramacool::scrape(tmdb_id, kind, season, episode, title));
-    let miruro = timed(miruro::ID, miruro::scrape(tmdb_id, kind, season, episode, title));
+    let miruro = async { None }; // Disabled: Cloudflare UAM
 
     // MovieBox searches by name, so it sits out entirely
     // when the caller didn't send a title.
