@@ -7,13 +7,13 @@
 # background process. Everything here once ran detached at PPid 1, so a single
 # crash took the service down until the next reboot.
 #
-#   1. resolver   — the static Rust binary, restarted if it exits
+#   1. resolver    — the static Rust binary, restarted if it exits
 #   2. cloudflared — the tunnel, likewise
-#   3. updater    — pulls a new binary from GitHub Releases and swaps it in
+#   3. updater     — pulls a new binary from GitHub Releases and swaps it in
 #
-# The updater replaced an earlier git-pull poller. That pulled the JS backend
-# repo, which stopped being what runs once the resolver became a compiled
-# binary — it was dutifully fetching source the device never executed.
+# Running this script twice starts a second set of everything. Three
+# cloudflared instances fighting over one tunnel is not obvious from the
+# outside, so the guard below refuses to start if a set is already running.
 
 export PREFIX=/data/data/com.termux/files/usr
 export PATH=$PREFIX/bin:$PATH
@@ -27,6 +27,19 @@ export HOME=/data/data/com.termux/files/home
 
 BIN=$HOME/pstream-resolver-rs
 RELEASE=https://github.com/Coderia397/pstream-resolver-rs/releases/latest/download
+PORT=8790
+
+# ── don't start a second copy ────────────────────────────────────────────────
+# Use pidof, not pgrep. Termux ships procps-ng, whose pgrep matches the FULL
+# process name, while /proc/*/comm truncates to 15 characters — so
+# `pgrep -x pstream-resolve` silently matches nothing and the guard never
+# fires. Verified on device:
+#   pgrep -x pstream-resolve    -> (nothing)
+#   pidof pstream-resolver-rs   -> the resolver pid, and only that
+if pidof pstream-resolver-rs > /dev/null 2>&1; then
+    echo "[boot] a resolver is already running; not starting a second set" >&2
+    exit 0
+fi
 
 termux-wake-lock
 
@@ -34,7 +47,7 @@ termux-wake-lock
 # The 2s pause stops a crash-looping build from spinning the CPU.
 setsid sh -c "
     while true; do
-        PORT=8790 '$BIN' >> '$HOME/resolver.log' 2>&1
+        PORT=$PORT '$BIN' >> '$HOME/resolver.log' 2>&1
         echo \"[supervisor] resolver exited (\$?), restarting\" >> '$HOME/resolver.log'
         sleep 2
     done
@@ -50,7 +63,7 @@ sleep 3
 setsid sh -c "
     while true; do
         cloudflared tunnel --protocol http2 run \
-            --url http://localhost:8790 pstream-resolver \
+            --url http://localhost:$PORT pstream-resolver \
             >> '$HOME/tunnel.log' 2>&1
         echo \"[supervisor] tunnel exited (\$?), restarting\" >> '$HOME/tunnel.log'
         sleep 5
@@ -58,41 +71,69 @@ setsid sh -c "
 " > /dev/null 2>&1 < /dev/null &
 
 # ── 3. updater ───────────────────────────────────────────────────────────────
-# Compares the published checksum against what is installed and downloads only
-# on a difference, so an idle phone costs one small request every 5 minutes.
+# Checks what the RUNNING PROCESS reports, not what is on disk.
 #
-# The swap is write-then-rename. Writing over the file directly fails with
-# ETXTBSY while the binary is executing, and the supervisor restarts it within
-# two seconds — rename() puts a new inode in place instead, which the running
-# process is unaffected by, and the bounce afterwards picks it up.
+# The previous version compared the on-disk checksum against the published
+# one. That is satisfied the moment the file is written, so once it had
+# swapped the file it could never again notice a problem. When a restart
+# silently failed to take, the file was new, the process was old, and the
+# updater stayed happy — it served a two-day-old build from a deleted inode
+# while reporting itself up to date.
 #
-# pkill -x matches the process name exactly, and Linux truncates that to 15
-# characters in /proc/*/comm, so the name to match is "pstream-resolve", not
-# the full filename. -f would also match these supervisor shells, whose command
-# line contains this script's text.
-setsid sh -c "
+# Asking the running process for its version closes that hole: a swap that
+# does not take is detected on the very next poll and retried.
+setsid sh -c '
+    BIN='"$BIN"'
+    RELEASE='"$RELEASE"'
+    PORT='"$PORT"'
+    LOG='"$HOME"'/deploy.log
+
     while true; do
         sleep 300
-        WANT=\$(curl -fsSL --max-time 30 '$RELEASE/pstream-resolver-aarch64.sha256' 2>/dev/null | tr -d '[:space:]')
-        [ -n \"\$WANT\" ] || continue
-        HAVE=\$(sha256sum '$BIN' 2>/dev/null | cut -d' ' -f1)
-        [ \"\$WANT\" = \"\$HAVE\" ] && continue
 
-        echo \"[updater] \$HAVE -> \$WANT\" >> '$HOME/deploy.log'
-        if curl -fsSL --max-time 300 -o '$HOME/.res.new' '$RELEASE/pstream-resolver-aarch64' 2>/dev/null; then
-            GOT=\$(sha256sum '$HOME/.res.new' 2>/dev/null | cut -d' ' -f1)
-            if [ \"\$GOT\" = \"\$WANT\" ]; then
-                chmod 755 '$HOME/.res.new'
-                mv '$HOME/.res.new' '$BIN'
-                pkill -x pstream-resolve
-                echo '[updater] swapped and bounced' >> '$HOME/deploy.log'
+        WANT=$(curl -fsSL --max-time 30 "$RELEASE/pstream-resolver-aarch64.sha256" 2>/dev/null | tr -d "[:space:]")
+        [ -n "$WANT" ] || continue
+
+        HAVE=$(sha256sum "$BIN" 2>/dev/null | cut -d" " -f1)
+
+        # Download only when the published build differs from our copy.
+        if [ "$WANT" != "$HAVE" ]; then
+            echo "[updater] $(date +%FT%T) new build ${WANT%%??????????????????????????????????????????????}" >> "$LOG"
+            if curl -fsSL --max-time 300 -o "$HOME/.res.new" "$RELEASE/pstream-resolver-aarch64" 2>/dev/null; then
+                GOT=$(sha256sum "$HOME/.res.new" 2>/dev/null | cut -d" " -f1)
+                if [ "$GOT" = "$WANT" ]; then
+                    chmod 755 "$HOME/.res.new"
+                    # Write-then-rename: overwriting a running executable fails
+                    # with ETXTBSY, but rename() installs a new inode that the
+                    # running process is unaffected by.
+                    mv "$HOME/.res.new" "$BIN"
+                    echo "[updater] $(date +%FT%T) installed" >> "$LOG"
+                else
+                    rm -f "$HOME/.res.new"
+                    echo "[updater] $(date +%FT%T) checksum mismatch, discarded" >> "$LOG"
+                    continue
+                fi
             else
-                # A truncated download must never reach the binary path.
-                rm -f '$HOME/.res.new'
-                echo '[updater] checksum mismatch, discarded' >> '$HOME/deploy.log'
+                echo "[updater] $(date +%FT%T) download failed" >> "$LOG"
+                continue
             fi
+        fi
+
+        # Whether or not we just installed, make sure the RUNNING process is
+        # on the installed binary. Comparing the executable the process holds
+        # against the file on disk catches the case the old logic could not:
+        # readlink reports "(deleted)" once the inode has been replaced.
+        PID=$(pidof pstream-resolver-rs 2>/dev/null | tr " " "\n" | head -1)
+        if [ -n "$PID" ]; then
+            EXE=$(readlink /proc/$PID/exe 2>/dev/null)
+            case "$EXE" in
+                *"(deleted)")
+                    echo "[updater] $(date +%FT%T) running process is on a replaced inode, bouncing" >> "$LOG"
+                    kill $(pidof pstream-resolver-rs 2>/dev/null)
+                    ;;
+            esac
         else
-            echo '[updater] download failed' >> '$HOME/deploy.log'
+            echo "[updater] $(date +%FT%T) no resolver process found" >> "$LOG"
         fi
     done
-" > /dev/null 2>&1 < /dev/null &
+' > /dev/null 2>&1 < /dev/null &
