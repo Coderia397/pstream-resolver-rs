@@ -75,27 +75,7 @@ pub const JSON_ACCEPT: &str = "application/json, text/plain, */*";
 /// Order is not a priority ranking — all are queried concurrently and every
 /// one that answers contributes its sources. It only decides which provider
 /// gets named as the headline one in the response.
-pub static PROVIDERS: &[Provider] = &[
-    Provider {
-        id: "cinemaos",
-        // 2026-08-26: Disabled here because it has a bespoke API scraper (cinemaos::scrape)
-        // that handles the AES-GCM encrypted API response. Leaving this enabled causes
-        // a duplicate DOM request to cinemaos.live on every resolve.
-        enabled: false,
-        name: "CinemaOS 🎥",
-        base: "https://cinemaos.live",
-        movie_path: "/watch/movie/{id}",
-        tv_path: "/watch/tv/{id}/{season}/{episode}",
-        timeout_secs: 15,
-        max_sources: 2,
-        qualities: &["1080p"],
-        client: ClientKind::Proxy,
-        accept: HTML_ACCEPT,
-        send_referer: true,
-        tag_source_referer: true,
-        mark_not_embed: true,
-    },
-];
+pub static PROVIDERS: &[Provider] = &[];
 
 /// Query every provider concurrently and return each one that produced
 /// sources, in table order.

@@ -202,6 +202,7 @@ async fn api_providers_health(headers: HeaderMap) -> Response {
         push(p.id, p.name, p.enabled, "");
     }
     // The three with bespoke logic aren't in the table.
+    push(extractors::cinemaos::ID, "CinemaOS 🎥", true, "");
     push(extractors::miruro::ID, "Miruro 🦊", true, "");
     push(extractors::bstsrs::ID, "BSTSrs 🍿", true, "");
     push(extractors::dramacool::ID, "DramaCool 🍿", true, "");
