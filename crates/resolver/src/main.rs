@@ -118,7 +118,19 @@ async fn api_stream(headers: HeaderMap, Query(q): Query<StreamQuery>) -> Respons
     // Past this point we'd hit a provider over our single IP — so meter it.
     let ip = ratelimit::client_ip(&headers);
     if ratelimit::check(&ip) {
-        println!("[resolve] rate-limited {ip}");
+        // Anonymise before logging: replace the last dot-separated segment with *
+        // so no complete IP address ever appears in process stdout.
+        let anon_ip = {
+            let mut parts: Vec<&str> = ip.splitn(5, '.').collect();
+            if parts.len() >= 4 {
+                *parts.last_mut().unwrap() = "*";
+                parts.join(".")
+            } else {
+                // IPv6 or unknown format — redact entirely
+                "x.x.x.*".to_string()
+            }
+        };
+        println!("[resolve] rate-limited {anon_ip}");
         return (
             StatusCode::TOO_MANY_REQUESTS,
             cors::headers_for(&headers),
