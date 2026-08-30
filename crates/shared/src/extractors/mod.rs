@@ -124,7 +124,7 @@ pub async fn run_all(
 
     let moviebox = async {
         match title {
-            Some(t) if !t.is_empty() => timed(moviebox::ID, moviebox::scrape(t, year)).await,
+            Some(t) if !t.is_empty() && kind.is_movie() => timed(moviebox::ID, moviebox::scrape(t, year)).await,
             _ => None,
         }
     };

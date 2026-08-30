@@ -82,38 +82,37 @@ pub struct SearchItem {
 /// inspecting Nuxt 3 hydration data (__NUXT_DATA__), legacy Nuxt 2 state, direct M3U8s,
 /// and fallback regexes while ignoring static image assets.
 pub fn extract_stream_from_html(html: &str) -> Option<String> {
+    // Helper to find all Aoneroom media
+    let mut all_media = Vec::new();
+    
     // 1. Nuxt 3 hydration payload or Nuxt 2 window.__NUXT__
     if let Some(nuxt) = NUXT_DATA_RE.captures(html).and_then(|c| c.get(1)) {
         let unescaped = nuxt.as_str().replace(r"\/", "/").replace(r"\\", "\\");
-        if let Some(media) = AONEROOM_MEDIA_RE.find(&unescaped) {
-            return Some(media.as_str().to_string());
+        for m in AONEROOM_MEDIA_RE.find_iter(&unescaped) {
+            all_media.push(m.as_str().to_string());
         }
-        if let Some(m3u8) = find_m3u8_urls(&unescaped).into_iter().next() {
-            return Some(m3u8);
-        }
-        if let Some(media) = ANY_MEDIA_RE.find(&unescaped) {
-            return Some(media.as_str().to_string());
+        for m in find_m3u8_urls(&unescaped) {
+            all_media.push(m);
         }
     }
 
-    // 2. Direct manifest sitting in the HTML body
-    if let Some(m3u8) = find_m3u8_urls(html).into_iter().next() {
-        return Some(m3u8);
+    for m in find_m3u8_urls(html) {
+        all_media.push(m);
+    }
+    for m in AONEROOM_MEDIA_RE.find_iter(html) {
+        all_media.push(m.as_str().to_string());
+    }
+    for m in MP4_RE.find_iter(html) {
+        all_media.push(m.as_str().to_string());
     }
 
-    // 3. Aoneroom media URL in raw HTML
-    if let Some(media) = AONEROOM_MEDIA_RE.find(html) {
-        return Some(media.as_str().to_string());
+    // PRIORITY: Return the first .m3u8 found (main feature). 
+    // If none exists, fallback to .mp4 (which is likely just a trailer).
+    if let Some(m3u8) = all_media.iter().find(|url| url.contains(".m3u8")) {
+        return Some(m3u8.clone());
     }
-
-    // 4. Progressive MP4 in raw HTML
-    if let Some(mp4) = MP4_RE.find(html) {
-        return Some(mp4.as_str().to_string());
-    }
-
-    // 5. Fallback media URL across entire raw HTML
-    if let Some(media) = ANY_MEDIA_RE.find(html) {
-        return Some(media.as_str().to_string());
+    if let Some(mp4) = all_media.iter().find(|url| url.contains(".mp4")) {
+        return Some(mp4.clone());
     }
 
     None
