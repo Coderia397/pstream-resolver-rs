@@ -2,6 +2,7 @@
 
 use crate::http::PROXY;
 use crate::models::{MediaKind, ProviderResult, Source};
+use crate::utils::{normalize_quality, sort_sources_by_quality};
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{AesGcm, aes::Aes256};
 use hmac::{Hmac, Mac};
@@ -154,23 +155,18 @@ pub async fn scrape(
     let sources = scrape_data.get("sources")?.as_object()?;
     
     // Extract the available streams.
-    let mut parsed_streams: Vec<(u32, Source)> = Vec::new();
+    let mut streams: Vec<Source> = Vec::new();
     for (quality, info) in sources {
         if let Some(url) = info.get("url").and_then(|v| v.as_str()) {
-            let res = format!("{}p", quality);
+            let res = normalize_quality(quality);
             let mut s = Source::direct_m3u8(url, &res).tagged("CinemaOS", ID);
             s = s.with_referer(BASE).not_embed();
-            
-            // Try to parse the quality string as a number for sorting (e.g. "1080" -> 1080)
-            let q_num = quality.parse::<u32>().unwrap_or(0);
-            parsed_streams.push((q_num, s));
+            streams.push(s);
         }
     }
 
     // Sort by quality descending (e.g. 1080p > 720p > 480p)
-    parsed_streams.sort_by(|a, b| b.0.cmp(&a.0));
-    
-    let streams: Vec<Source> = parsed_streams.into_iter().map(|(_, s)| s).collect();
+    sort_sources_by_quality(&mut streams);
 
     ProviderResult::some_if_any(NAME, ID, streams)
 }

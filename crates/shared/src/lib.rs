@@ -18,6 +18,11 @@ pub mod probe;
 
 pub mod ratelimit;
 pub mod subdl;
+pub mod utils;
 pub mod youtube;
 
 pub use models::{MediaKind, ProviderResult, Source, Subtitle};
+pub use utils::{
+    matches_year_tolerance, normalize_quality, parse_year, quality_rank, slugify,
+    sort_sources_by_quality,
+};

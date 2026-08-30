@@ -13,6 +13,7 @@
 
 use crate::http::{get_text_with, INSECURE};
 use crate::models::{MediaKind, ProviderResult, Source};
+use crate::utils::sort_sources_by_quality;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
@@ -82,7 +83,7 @@ pub async fn scrape(
         }
     };
 
-    let sources: Vec<Source> = raw
+    let mut sources: Vec<Source> = raw
         .into_iter()
         .filter(|s| !s.file.is_empty())
         .map(|s| {
@@ -95,12 +96,14 @@ pub async fn scrape(
         })
         .collect();
 
+    // The upstream JSON sources array is ordered ascending (360p -> 1080p).
+    // Sort descending so highest quality (1080p) appears at index 0.
+    sort_sources_by_quality(&mut sources);
+
     if sources.is_empty() {
         println!("[NontonGo] ❌ sources array was empty");
     } else {
-        // The JS logs the last entry as "best" — the array is ordered
-        // ascending by quality.
-        let best = sources.last().map(|s| s.quality.as_str()).unwrap_or("auto");
+        let best = sources.first().map(|s| s.quality.as_str()).unwrap_or("auto");
         println!("[NontonGo] ✅ Found {} direct sources! Best: {best}", sources.len());
     }
 

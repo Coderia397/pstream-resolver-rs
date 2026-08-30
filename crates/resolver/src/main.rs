@@ -12,8 +12,8 @@ use axum::{
     Json, Router,
 };
 use pstream_shared::{
-    cache, cors, extractors, health, probe, ratelimit, subdl, youtube, MediaKind,
-    ProviderResult,
+    cache, cors, extractors, health, probe, quality_rank, ratelimit, subdl, youtube, MediaKind,
+    ProviderResult, Source,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -157,11 +157,29 @@ async fn api_stream(headers: HeaderMap, Query(q): Query<StreamQuery>) -> Respons
         );
     };
 
+    let mut sources: Vec<Source> = working
+        .iter()
+        .flat_map(|r| r.sources.iter().cloned())
+        .collect();
+
+    // Sort cross-provider sources descending by quality rank.
+    // When quality ranks are equal, prioritize direct streams (!is_embed) over embeds.
+    sources.sort_by(|a, b| {
+        let rank_a = quality_rank(&a.quality);
+        let rank_b = quality_rank(&b.quality);
+        if rank_a != rank_b {
+            return rank_b.cmp(&rank_a);
+        }
+        let embed_a = a.is_embed.unwrap_or(false);
+        let embed_b = b.is_embed.unwrap_or(false);
+        embed_a.cmp(&embed_b)
+    });
+
     let payload = json!({
         "success": true,
         "provider": winner.provider,
         "providerId": winner.provider_id,
-        "sources": working.iter().flat_map(|r| r.sources.iter()).collect::<Vec<_>>(),
+        "sources": sources,
         "subtitles": working.iter().flat_map(|r| r.subtitles.iter()).collect::<Vec<_>>(),
     });
 

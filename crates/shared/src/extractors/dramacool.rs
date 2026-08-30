@@ -11,6 +11,8 @@
 use crate::extractors::find_m3u8_urls;
 use crate::http::{get_text_with, PROXY};
 use crate::models::{MediaKind, ProviderResult, Source};
+pub use crate::utils::slugify;
+use crate::utils::{matches_year_tolerance, sort_sources_by_quality};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::time::Duration;
@@ -20,26 +22,43 @@ pub const ID: &str = "dramacool";
 const BASE: &str = "https://ww1.dramacool.cx";
 
 static LINKSERVER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)<li[^>]*\bclass\s*=\s*["'][^"']*(?:linkserver|server)[^"']*["'][^>]*\bdata-video\s*=\s*["']([^"']+)["']"#)
+    Regex::new(r#"(?is)<li[^>]*\b(?:class\s*=\s*["'][^"']*(?:linkserver|server)[^"']*["'][^>]*\bdata-video\s*=\s*["']([^"']+)["']|\bdata-video\s*=\s*["']([^"']+)["'][^>]*\bclass\s*=\s*["'][^"']*(?:linkserver|server)[^"']*["'])[^>]*>(.*?)</li>"#)
         .expect("linkserver regex")
 });
 
 static DATA_VIDEO_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"\bdata-video\s*=\s*["']([^"']+)["']"#).expect("data-video regex")
+    Regex::new(r#"(?is)<[^>]*\bdata-video\s*=\s*["']([^"']+)["'][^>]*>(.*?)(?:</[^>]+>|$)"#)
+        .expect("data-video regex")
 });
 
 static IFRAME_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"<iframe[^>]*\s+src\s*=\s*["']([^"']+)["']"#).expect("iframe regex")
 });
 
-static SEARCH_RESULT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"href\s*=\s*["'](?:https?://[^"'/]+)?/([^"'/]+-episode-\d+\.html|drama-detail/[^"'/]+|[^"'/]+\.html)["'][^>]*>(?:<h3[^>]*>)?([^<]+)"#)
-        .expect("search result regex")
+static SEARCH_ANCHOR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?is)<a\b([^>]*\bhref\s*=\s*["'][^"']+["'][^>]*)>(.*?)</a>"#)
+        .expect("search anchor regex")
 });
 
-static SEARCH_DRAMA_DETAIL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"href\s*=\s*["'](?:https?://[^"'/]+)?/drama-detail/([a-zA-Z0-9-]+)["']"#)
-        .expect("drama detail regex")
+static HREF_ATTR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)\bhref\s*=\s*["'](?:https?://[^"'/]+)?/([^"']+)["']"#)
+        .expect("href attr regex")
+});
+
+static TITLE_ATTR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)\btitle\s*=\s*["']([^"']+)["']"#).expect("title attr regex")
+});
+
+static STRIP_TAGS_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"<[^>]+>"#).expect("strip tags regex")
+});
+
+static HEADER_YEAR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"\((19\d{2}|20\d{2})\)"#).expect("dramacool header year regex")
+});
+
+static BARE_YEAR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"\b(19\d{2}|20\d{2})\b"#).expect("dramacool bare year regex")
 });
 
 /// Non-video host patterns to ignore (ads, tracking, comments, widgets).
@@ -56,29 +75,29 @@ static AD_DOMAINS: &[&str] = &[
     "widget",
 ];
 
-/// Convert title into DramaCool slug format.
-/// E.g. "Squid Game" -> "squid-game", "Crash Landing on You" -> "crash-landing-on-you".
-pub fn slugify(title: &str) -> String {
-    let mut slug = String::with_capacity(title.len());
-    let mut prev_hyphen = true;
+#[derive(Debug, Clone)]
+struct DramaSearchCandidate {
+    slug: String,
+    title: String,
+    year: Option<u32>,
+}
 
-    for c in title.chars() {
-        if c.is_ascii_alphanumeric() {
-            slug.push(c.to_ascii_lowercase());
-            prev_hyphen = false;
-        } else if c == '\'' || c == '\"' || c == '`' {
-            continue;
-        } else if !prev_hyphen {
-            slug.push('-');
-            prev_hyphen = true;
+fn extract_year_from_drama_text(text: &str) -> Option<u32> {
+    if let Some(caps) = HEADER_YEAR_RE.captures(text) {
+        if let Some(m) = caps.get(1) {
+            if let Ok(y) = m.as_str().parse::<u32>() {
+                return Some(y);
+            }
         }
     }
-
-    if slug.ends_with('-') {
-        slug.pop();
+    if let Some(caps) = BARE_YEAR_RE.captures(text) {
+        if let Some(m) = caps.get(1) {
+            if let Ok(y) = m.as_str().parse::<u32>() {
+                return Some(y);
+            }
+        }
     }
-
-    slug
+    None
 }
 
 /// Construct primary episode path for DramaCool.
@@ -117,8 +136,69 @@ pub fn extract_sources_from_html(html: &str) -> Vec<Source> {
     let mut sources: Vec<Source> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    // 1. Linkserver list items: <li class="linkserver" data-video="...">
+    // 1. Linkserver list items: <li class="linkserver" data-video="...">Text</li>
     for caps in LINKSERVER_RE.captures_iter(html) {
+        let raw_url = caps.get(1).or_else(|| caps.get(2));
+        if let Some(m) = raw_url {
+            let normalized = normalize_url(m.as_str());
+            let tag_text = caps.get(3).map(|t| t.as_str()).unwrap_or("");
+            if is_video_source(&normalized) && seen.insert(normalized.clone()) {
+                let is_m3u8 = normalized.contains(".m3u8");
+                let combined = format!("{normalized} {tag_text}").to_ascii_lowercase();
+                let quality = if combined.contains("1080") || combined.contains("fhd") {
+                    "1080p"
+                } else if combined.contains("480") || combined.contains("360") || combined.contains("sd") {
+                    "480p"
+                } else {
+                    "720p"
+                };
+
+                let mut s = if is_m3u8 {
+                    Source::direct_m3u8(&normalized, quality)
+                } else {
+                    Source::embed(&normalized, quality)
+                }
+                .tagged("DramaCool", ID)
+                .with_referer(BASE);
+
+                s.is_m3u8 = is_m3u8;
+                sources.push(s);
+            }
+        }
+    }
+
+    // 2. Generic data-video attributes
+    for caps in DATA_VIDEO_RE.captures_iter(html) {
+        if let Some(m) = caps.get(1) {
+            let normalized = normalize_url(m.as_str());
+            let tag_text = caps.get(2).map(|t| t.as_str()).unwrap_or("");
+            if is_video_source(&normalized) && seen.insert(normalized.clone()) {
+                let is_m3u8 = normalized.contains(".m3u8");
+                let combined = format!("{normalized} {tag_text}").to_ascii_lowercase();
+                let quality = if combined.contains("1080") || combined.contains("fhd") {
+                    "1080p"
+                } else if combined.contains("480") || combined.contains("360") || combined.contains("sd") {
+                    "480p"
+                } else {
+                    "720p"
+                };
+
+                let mut s = if is_m3u8 {
+                    Source::direct_m3u8(&normalized, quality)
+                } else {
+                    Source::embed(&normalized, quality)
+                }
+                .tagged("DramaCool", ID)
+                .with_referer(BASE);
+
+                s.is_m3u8 = is_m3u8;
+                sources.push(s);
+            }
+        }
+    }
+
+    // 3. Iframe embed tags: <iframe src="...">
+    for caps in IFRAME_RE.captures_iter(html) {
         if let Some(m) = caps.get(1) {
             let normalized = normalize_url(m.as_str());
             if is_video_source(&normalized) && seen.insert(normalized.clone()) {
@@ -145,96 +225,74 @@ pub fn extract_sources_from_html(html: &str) -> Vec<Source> {
         }
     }
 
-    // 2. Generic data-video attributes
-    for caps in DATA_VIDEO_RE.captures_iter(html) {
-        if let Some(m) = caps.get(1) {
-            let normalized = normalize_url(m.as_str());
-            if is_video_source(&normalized) && seen.insert(normalized.clone()) {
-                let is_m3u8 = normalized.contains(".m3u8");
-                let mut s = if is_m3u8 {
-                    Source::direct_m3u8(&normalized, "720p")
-                } else {
-                    Source::embed(&normalized, "720p")
-                }
-                .tagged("DramaCool", ID)
-                .with_referer(BASE);
-
-                s.is_m3u8 = is_m3u8;
-                sources.push(s);
-            }
-        }
-    }
-
-    // 3. Iframe embed tags: <iframe src="...">
-    for caps in IFRAME_RE.captures_iter(html) {
-        if let Some(m) = caps.get(1) {
-            let normalized = normalize_url(m.as_str());
-            if is_video_source(&normalized) && seen.insert(normalized.clone()) {
-                let is_m3u8 = normalized.contains(".m3u8");
-                let mut s = if is_m3u8 {
-                    Source::direct_m3u8(&normalized, "720p")
-                } else {
-                    Source::embed(&normalized, "720p")
-                }
-                .tagged("DramaCool", ID)
-                .with_referer(BASE);
-
-                s.is_m3u8 = is_m3u8;
-                sources.push(s);
-            }
-        }
-    }
-
     // 4. Direct .m3u8 streams
     for m3u8_url in find_m3u8_urls(html) {
         if seen.insert(m3u8_url.clone()) {
-            let s = Source::direct_m3u8(&m3u8_url, "720p")
+            let quality = if m3u8_url.contains("1080") {
+                "1080p"
+            } else if m3u8_url.contains("480") || m3u8_url.contains("360") {
+                "480p"
+            } else {
+                "720p"
+            };
+
+            let s = Source::direct_m3u8(&m3u8_url, quality)
                 .tagged("DramaCool", ID)
                 .with_referer(BASE);
             sources.push(s);
         }
     }
 
+    sort_sources_by_quality(&mut sources);
     sources
 }
 
-/// Parse search response HTML to find best drama slug matching title.
-pub fn parse_search_slug(html: &str, title: &str) -> Option<String> {
+/// Parse search response HTML to find best drama slug matching title and year (+/- 1 year tolerance).
+pub fn parse_search_slug(html: &str, title: &str, target_year: Option<u32>) -> Option<String> {
     let target_slug = slugify(title);
-    let mut candidates: Vec<String> = Vec::new();
+    let mut candidates: Vec<DramaSearchCandidate> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
 
-    // 1. Collect direct drama-detail links
-    for caps in SEARCH_DRAMA_DETAIL_RE.captures_iter(html) {
-        if let Some(slug_match) = caps.get(1) {
-            let slug = slug_match.as_str().trim();
-            if !slug.is_empty() && !candidates.iter().any(|c| c.as_str() == slug) {
-                candidates.push(slug.to_string());
-            }
+    // Scan all anchor tags for drama links
+    for caps in SEARCH_ANCHOR_RE.captures_iter(html) {
+        let tag_attrs = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let inner_html = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+
+        let Some(href_cap) = HREF_ATTR_RE.captures(tag_attrs) else {
+            continue;
+        };
+        let path = href_cap.get(1).map(|m| m.as_str().trim()).unwrap_or("");
+        if path.is_empty() || path.contains("index") || path.contains("search") || path == "home" {
+            continue;
         }
-    }
 
-    // 2. Check generic search results with title matching
-    for caps in SEARCH_RESULT_RE.captures_iter(html) {
-        if let (Some(path_match), Some(title_match)) = (caps.get(1), caps.get(2)) {
-            let path = path_match.as_str();
-            let result_title = title_match.as_str().trim();
-            let result_slug = slugify(result_title);
+        let slug_opt = if let Some(detail_slug) = path.strip_prefix("drama-detail/") {
+            Some(detail_slug.trim_matches('/').to_string())
+        } else if let Some(ep_slug) = path.split("-episode-").next() {
+            Some(ep_slug.trim_start_matches('/').trim_end_matches(".html").to_string())
+        } else if path.ends_with(".html") {
+            Some(path.trim_end_matches(".html").trim_start_matches('/').to_string())
+        } else {
+            Some(path.trim_matches('/').to_string())
+        };
 
-            if result_slug == target_slug
-                || result_slug.contains(&target_slug)
-                || target_slug.contains(&result_slug)
-            {
-                if let Some(detail_slug) = path.strip_prefix("drama-detail/") {
-                    let s = detail_slug.trim_matches('/').to_string();
-                    if !candidates.iter().any(|c| c.as_str() == s.as_str()) {
-                        candidates.push(s);
-                    }
-                } else if let Some(ep_slug) = path.split("-episode-").next() {
-                    let s = ep_slug.trim_start_matches('/').to_string();
-                    if !candidates.iter().any(|c| c.as_str() == s.as_str()) {
-                        candidates.push(s);
-                    }
-                }
+        if let Some(slug) = slug_opt {
+            if !slug.is_empty() && seen.insert(slug.clone()) {
+                let title_attr = TITLE_ATTR_RE
+                    .captures(tag_attrs)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str())
+                    .unwrap_or("");
+                let inner_text = STRIP_TAGS_RE.replace_all(inner_html, " ");
+                let combined_text = format!("{title_attr} {inner_text}").trim().to_string();
+                let year = extract_year_from_drama_text(&combined_text)
+                    .or_else(|| extract_year_from_drama_text(&slug));
+
+                candidates.push(DramaSearchCandidate {
+                    slug,
+                    title: combined_text,
+                    year,
+                });
             }
         }
     }
@@ -243,36 +301,95 @@ pub fn parse_search_slug(html: &str, title: &str) -> Option<String> {
         return None;
     }
 
-    // Exact match first
-    if let Some(exact) = candidates.iter().find(|s| s.as_str() == target_slug.as_str()) {
-        return Some(exact.clone());
-    }
+    // Filter by title relevance
+    let relevant: Vec<&DramaSearchCandidate> = candidates
+        .iter()
+        .filter(|c| {
+            if target_slug.is_empty() {
+                return true;
+            }
+            let c_slug = &c.slug;
+            let c_title_slug = slugify(&c.title);
+            c_slug == &target_slug
+                || c_slug.starts_with(&format!("{target_slug}-"))
+                || c_slug.contains(&target_slug)
+                || target_slug.contains(c_slug.as_str())
+                || (!c_title_slug.is_empty()
+                    && (c_title_slug == target_slug
+                        || c_title_slug.starts_with(&format!("{target_slug}-"))
+                        || c_title_slug.contains(&target_slug)
+                        || target_slug.contains(&c_title_slug)))
+        })
+        .collect();
 
-    // If target doesn't specify a season, prefer a candidate that also doesn't specify a season
-    if !target_slug.contains("season") {
-        if let Some(no_season) = candidates.iter().find(|s| {
-            (s.contains(&target_slug)
-                || target_slug.contains(s.as_str())
-                || s.replace("the-", "").starts_with(&target_slug))
-                && !s.contains("season")
+    let pool = if relevant.is_empty() {
+        candidates.iter().collect::<Vec<_>>()
+    } else {
+        relevant
+    };
+
+    if let Some(target_y) = target_year {
+        // Priority 1: Exact title match AND exact year
+        if let Some(exact) = pool.iter().find(|c| {
+            (c.slug == target_slug || slugify(&c.title) == target_slug) && c.year == Some(target_y)
         }) {
-            return Some(no_season.clone());
+            return Some(exact.slug.clone());
+        }
+
+        // Priority 2: Any relevant candidate with exact year
+        if let Some(exact_year) = pool.iter().find(|c| c.year == Some(target_y)) {
+            return Some(exact_year.slug.clone());
+        }
+
+        // Priority 3: Tolerance year match (+/- 1 year)
+        if let Some(tol_year) = pool.iter().find(|c| {
+            matches_year_tolerance(c.year, Some(target_y), 1)
+        }) {
+            return Some(tol_year.slug.clone());
+        }
+
+        // Priority 4: Exact title match without year
+        if let Some(exact) = pool.iter().find(|c| c.slug == target_slug) {
+            return Some(exact.slug.clone());
+        }
+
+        // Priority 5: Candidate with no year specified
+        if let Some(no_year) = pool.iter().find(|c| c.year.is_none()) {
+            return Some(no_year.slug.clone());
+        }
+    } else {
+        // No year provided
+        // Exact match first
+        if let Some(exact) = pool.iter().find(|c| c.slug == target_slug) {
+            return Some(exact.slug.clone());
+        }
+
+        // If target doesn't specify a season, prefer a candidate that also doesn't specify a season
+        if !target_slug.contains("season") {
+            if let Some(no_season) = pool.iter().find(|c| {
+                (c.slug.contains(&target_slug)
+                    || target_slug.contains(c.slug.as_str())
+                    || c.slug.replace("the-", "").starts_with(&target_slug))
+                    && !c.slug.contains("season")
+            }) {
+                return Some(no_season.slug.clone());
+            }
         }
     }
 
     // Fallback: candidate containing target_slug or target_slug containing candidate
-    if let Some(matched) = candidates.iter().find(|s| {
-        s.contains(&target_slug) || target_slug.contains(s.as_str())
+    if let Some(matched) = pool.iter().find(|c| {
+        c.slug.contains(&target_slug) || target_slug.contains(c.slug.as_str())
     }) {
-        return Some(matched.clone());
+        return Some(matched.slug.clone());
     }
 
     // Otherwise first candidate
-    candidates.into_iter().next()
+    pool.first().map(|c| c.slug.clone())
 }
 
 /// Fallback search on DramaCool to discover drama slug.
-pub async fn search_drama_slug(title: &str) -> Option<String> {
+pub async fn search_drama_slug(title: &str, year: Option<u32>) -> Option<String> {
     let encoded = urlencoding::encode(title);
     let search_url = format!("{BASE}/search?type=drama&keyword={encoded}");
 
@@ -287,7 +404,7 @@ pub async fn search_drama_slug(title: &str) -> Option<String> {
     )
     .await?;
 
-    parse_search_slug(&html, title)
+    parse_search_slug(&html, title, year)
 }
 
 /// Scrape DramaCool for drama episode streams.
@@ -297,6 +414,7 @@ pub async fn scrape(
     _season: u32,
     episode: u32,
     title: Option<&str>,
+    year: Option<u32>,
 ) -> Option<ProviderResult> {
     let title_str = title?.trim();
     if title_str.is_empty() {
@@ -308,7 +426,10 @@ pub async fn scrape(
         return None;
     }
 
-    println!("[DramaCool] Scraping \"{title_str}\" (slug: {slug}) Ep {episode}");
+    println!(
+        "[DramaCool] Scraping \"{title_str}\" (slug: {slug}) Ep {episode} (year: {:?})",
+        year
+    );
 
     let primary_path = build_episode_path(&slug, kind, episode);
     let primary_url = format!("{BASE}{primary_path}");
@@ -332,11 +453,11 @@ pub async fn scrape(
             if !src.is_empty() {
                 src
             } else {
-                try_fallback_search(title_str, kind, episode).await?
+                try_fallback_search(title_str, kind, episode, year).await?
             }
         }
         None => {
-            try_fallback_search(title_str, kind, episode).await?
+            try_fallback_search(title_str, kind, episode, year).await?
         }
     };
 
@@ -348,9 +469,10 @@ async fn try_fallback_search(
     title: &str,
     kind: MediaKind,
     episode: u32,
+    year: Option<u32>,
 ) -> Option<Vec<Source>> {
     println!("[DramaCool] Attempting search fallback for \"{title}\"");
-    let searched_slug = search_drama_slug(title).await?;
+    let searched_slug = search_drama_slug(title, year).await?;
     let path = build_episode_path(&searched_slug, kind, episode);
     let url = format!("{BASE}{path}");
 
@@ -446,14 +568,21 @@ mod tests {
         let sources = extract_sources_from_html(html);
         assert_eq!(sources.len(), 4);
 
+        // Sources sorted descending by quality: 1080p first!
         assert_eq!(sources[0].url, "https://asianload.io/streaming.php?id=MTE2NjU=");
+        assert_eq!(sources[0].quality, "1080p");
         assert_eq!(sources[0].is_embed, Some(true));
         assert_eq!(sources[0].provider.as_deref(), Some("DramaCool"));
         assert_eq!(sources[0].provider_id.as_deref(), Some("dramacool"));
 
         assert_eq!(sources[1].url, "https://vidhide.com/v/vhide1234");
+        assert_eq!(sources[1].quality, "720p");
+
         assert_eq!(sources[2].url, "https://streamwish.to/e/swish5678");
+        assert_eq!(sources[2].quality, "720p");
+
         assert_eq!(sources[3].url, "https://mp4upload.com/embed-mp4xyz.html");
+        assert_eq!(sources[3].quality, "720p");
     }
 
     #[test]
@@ -473,7 +602,7 @@ mod tests {
         </ul>
         "#;
 
-        let slug = parse_search_slug(html, "Squid Game");
+        let slug = parse_search_slug(html, "Squid Game", None);
         assert_eq!(slug, Some("squid-game".to_string()));
     }
 
@@ -522,10 +651,10 @@ mod tests {
         </ul>
         "#;
 
-        let slug = parse_search_slug(html, "Squid Game");
+        let slug = parse_search_slug(html, "Squid Game", Some(2021));
         assert_eq!(slug, Some("the-squid-games".to_string()));
 
-        let s2_slug = parse_search_slug(html, "Squid Game Season 2");
+        let s2_slug = parse_search_slug(html, "Squid Game Season 2", Some(2024));
         assert_eq!(s2_slug, Some("squid-game-season-2".to_string()));
     }
 }

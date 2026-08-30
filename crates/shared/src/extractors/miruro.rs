@@ -9,6 +9,7 @@
 use crate::extractors::JSON_ACCEPT;
 use crate::http::PROXY;
 use crate::models::{MediaKind, ProviderResult, Source, Subtitle};
+use crate::utils::sort_sources_by_quality;
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -141,24 +142,9 @@ impl MiruroSearchItem {
     }
 }
 
-fn quality_rank(quality: &str) -> u32 {
-    let lower = quality.to_ascii_lowercase();
-    if lower.contains("1080") {
-        1080
-    } else if lower.contains("720") {
-        720
-    } else if lower.contains("480") {
-        480
-    } else if lower.contains("360") {
-        360
-    } else {
-        100 // auto / default
-    }
-}
-
 /// Parse stream response payload and extract sources and subtitles.
 pub fn parse_stream_response(resp: &MiruroStreamResponse) -> (Vec<Source>, Vec<Subtitle>) {
-    let mut raw_sources: Vec<(u32, Source)> = Vec::new();
+    let mut sources: Vec<Source> = Vec::new();
     let mut subtitles: Vec<Subtitle> = Vec::new();
     let mut seen_urls = std::collections::HashSet::new();
 
@@ -192,15 +178,14 @@ pub fn parse_stream_response(resp: &MiruroStreamResponse) -> (Vec<Source>, Vec<S
                     .with_referer(REFERER);
 
                     s.is_m3u8 = is_m3u8;
-                    let rank = quality_rank(quality);
-                    raw_sources.push((rank, s));
+                    sources.push(s);
                 }
             }
         }
     }
 
     // Direct single url fallback
-    if raw_sources.is_empty() {
+    if sources.is_empty() {
         let single_url = resp
             .url
             .as_deref()
@@ -218,7 +203,7 @@ pub fn parse_stream_response(resp: &MiruroStreamResponse) -> (Vec<Source>, Vec<S
                 .tagged("Miruro Anime", ID)
                 .with_referer(REFERER);
                 s.is_m3u8 = is_m3u8;
-                raw_sources.push((1080, s));
+                sources.push(s);
             }
         }
     }
@@ -254,8 +239,7 @@ pub fn parse_stream_response(resp: &MiruroStreamResponse) -> (Vec<Source>, Vec<S
     }
 
     // Sort sources by quality descending (1080p > 720p > 480p > 360p > auto)
-    raw_sources.sort_by(|a, b| b.0.cmp(&a.0));
-    let sources = raw_sources.into_iter().map(|(_, s)| s).collect();
+    sort_sources_by_quality(&mut sources);
 
     (sources, subtitles)
 }

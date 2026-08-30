@@ -67,7 +67,7 @@ pub struct Provider {
     pub mark_not_embed: bool,
 }
 
-const HTML_ACCEPT: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+pub const HTML_ACCEPT: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 pub const JSON_ACCEPT: &str = "application/json, text/plain, */*";
 
 /// Every provider `/api/stream` queries, in the order the JS lists them.
@@ -106,8 +106,8 @@ pub async fn run_all(
 
     let vixsrc = timed(vixsrc::ID, vixsrc::scrape(tmdb_id, kind, season, episode));
     let cinemaos = timed(cinemaos::ID, cinemaos::scrape(tmdb_id, kind, season, episode));
-    let bstsrs = timed(bstsrs::ID, bstsrs::scrape(tmdb_id, kind, season, episode, title));
-    let dramacool = timed(dramacool::ID, dramacool::scrape(tmdb_id, kind, season, episode, title));
+    let bstsrs = timed(bstsrs::ID, bstsrs::scrape(tmdb_id, kind, season, episode, title, year));
+    let dramacool = timed(dramacool::ID, dramacool::scrape(tmdb_id, kind, season, episode, title, year));
     let miruro = async { None }; // Disabled: Cloudflare UAM
 
     // MovieBox searches by name, so it sits out entirely

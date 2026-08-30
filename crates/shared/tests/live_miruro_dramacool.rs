@@ -10,7 +10,7 @@ async fn test_miruro_live() {
 
 #[tokio::test]
 async fn test_dramacool_live() {
-    let res = dramacool::scrape("93405", MediaKind::Tv, 1, 1, Some("Squid Game")).await;
+    let res = dramacool::scrape("93405", MediaKind::Tv, 1, 1, Some("Squid Game"), Some(2021)).await;
     println!("DramaCool live result: {res:?}");
     assert!(
         res.is_some(),

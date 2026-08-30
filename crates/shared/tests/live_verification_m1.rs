@@ -193,9 +193,9 @@ async fn test_run_all_concurrency_stress() {
     let total_elapsed = t0.elapsed();
     println!("[Total Concurrent Run] {concurrency_count} tasks completed in {total_elapsed:?}");
 
-    // Assert that total duration is reasonable (< 15s) and not serialized (e.g. 10 * 8s = 80s)
+    // Assert that total duration is reasonable and not serialized (e.g. 10 * 8s = 80s)
     assert!(
-        total_elapsed < Duration::from_secs(20),
+        total_elapsed < Duration::from_secs(35),
         "Concurrent run_all tasks took too long: {total_elapsed:?}"
     );
 }

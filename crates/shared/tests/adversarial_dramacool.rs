@@ -181,19 +181,23 @@ fn test_extract_sources_attribute_variations() {
     let sources = extract_sources_from_html(html);
     assert_eq!(sources.len(), 5);
 
-    // Verify properties
-    assert_eq!(sources[0].url, "https://vidbasic.top/embed/server1");
+    // Verify properties - sources are sorted descending by quality (1080p > 720p > 480p)
+    assert_eq!(sources[0].url, "https://asianload.io/streaming.php?id=server2_1080p");
+    assert_eq!(sources[0].quality, "1080p");
     assert_eq!(sources[0].provider_id.as_deref(), Some(ID));
     assert_eq!(sources[0].is_embed, Some(true));
 
-    assert_eq!(sources[1].url, "https://asianload.io/streaming.php?id=server2_1080p");
-    assert_eq!(sources[1].quality, "1080p");
+    assert_eq!(sources[1].url, "https://vidbasic.top/embed/server1");
+    assert_eq!(sources[1].quality, "720p");
 
-    assert_eq!(sources[2].url, "https://streamwish.to/e/server3_480p");
-    assert_eq!(sources[2].quality, "480p");
+    assert_eq!(sources[2].url, "https://vidhide.com/v/server4");
+    assert_eq!(sources[2].quality, "720p");
 
-    assert_eq!(sources[3].url, "https://vidhide.com/v/server4");
-    assert_eq!(sources[4].url, "https://vidbasic.top/embed/iframe1");
+    assert_eq!(sources[3].url, "https://vidbasic.top/embed/iframe1");
+    assert_eq!(sources[3].quality, "720p");
+
+    assert_eq!(sources[4].url, "https://streamwish.to/e/server3_480p");
+    assert_eq!(sources[4].quality, "480p");
 }
 
 #[test]
@@ -226,10 +230,13 @@ fn test_extract_sources_direct_m3u8() {
     let sources = extract_sources_from_html(html);
     assert_eq!(sources.len(), 3);
 
-    assert_eq!(sources[0].url, "https://cdn.example.com/hls/live.m3u8");
+    // Highest quality (1080p) is sorted first
+    assert_eq!(sources[0].url, "https://hls.asianload.io/stream/1080p.m3u8");
+    assert_eq!(sources[0].quality, "1080p");
     assert_eq!(sources[0].is_m3u8, true);
 
     let m3u8_urls: Vec<&str> = sources.iter().map(|s| s.url.as_str()).collect();
+    assert!(m3u8_urls.contains(&"https://cdn.example.com/hls/live.m3u8"));
     assert!(m3u8_urls.contains(&"https://hls.asianload.io/stream/manifest.m3u8?token=xyz"));
     assert!(m3u8_urls.contains(&"https://hls.asianload.io/stream/1080p.m3u8"));
 }
@@ -287,15 +294,15 @@ fn test_parse_search_slug_domain_variations() {
     "#;
 
     assert_eq!(
-        parse_search_slug(html, "Crash Landing on You"),
+        parse_search_slug(html, "Crash Landing on You", None),
         Some("crash-landing-on-you".to_string())
     );
     assert_eq!(
-        parse_search_slug(html, "Crash Course in Romance"),
+        parse_search_slug(html, "Crash Course in Romance", None),
         Some("crash-course-in-romance".to_string())
     );
     assert_eq!(
-        parse_search_slug(html, "Crash"),
+        parse_search_slug(html, "Crash", None),
         Some("crash".to_string())
     );
 }
@@ -324,22 +331,22 @@ fn test_parse_search_slug_multi_season_prioritization() {
 
     // Searching Season 1 / base title prefers base slug without 'season'
     assert_eq!(
-        parse_search_slug(html, "Taxi Driver"),
+        parse_search_slug(html, "Taxi Driver", None),
         Some("taxi-driver".to_string())
     );
 
     // Searching Season 2 explicitly matches season-2
     assert_eq!(
-        parse_search_slug(html, "Taxi Driver Season 2"),
+        parse_search_slug(html, "Taxi Driver Season 2", None),
         Some("taxi-driver-season-2".to_string())
     );
 }
 
 #[test]
 fn test_parse_search_slug_empty_and_no_match() {
-    assert_eq!(parse_search_slug("", "Squid Game"), None);
+    assert_eq!(parse_search_slug("", "Squid Game", None), None);
     assert_eq!(
-        parse_search_slug("<div>No results found</div>", "NonExistentShow"),
+        parse_search_slug("<div>No results found</div>", "NonExistentShow", None),
         None
     );
 }
@@ -350,14 +357,14 @@ fn test_parse_search_slug_empty_and_no_match() {
 
 #[tokio::test]
 async fn test_scrape_empty_or_whitespace_title_returns_none() {
-    assert!(scrape("93405", MediaKind::Tv, 1, 1, None).await.is_none());
-    assert!(scrape("93405", MediaKind::Tv, 1, 1, Some("")).await.is_none());
-    assert!(scrape("93405", MediaKind::Tv, 1, 1, Some("   \t\n")).await.is_none());
+    assert!(scrape("93405", MediaKind::Tv, 1, 1, None, None).await.is_none());
+    assert!(scrape("93405", MediaKind::Tv, 1, 1, Some(""), None).await.is_none());
+    assert!(scrape("93405", MediaKind::Tv, 1, 1, Some("   \t\n"), None).await.is_none());
 }
 
 #[tokio::test]
 async fn test_live_search_drama_slug() {
-    let slug = search_drama_slug("Squid Game").await;
+    let slug = search_drama_slug("Squid Game", Some(2021)).await;
     assert_eq!(slug, Some("the-squid-games".to_string()));
 }
 
@@ -396,7 +403,7 @@ async fn test_dramacool_concurrency_stress() {
     let tasks: Vec<_> = titles
         .into_iter()
         .map(|(tmdb_id, kind, season, ep, title)| async move {
-            scrape(tmdb_id, kind, season, ep, Some(title)).await
+            scrape(tmdb_id, kind, season, ep, Some(title), None).await
         })
         .collect();
 
@@ -508,12 +515,12 @@ async fn test_live_multidrama_e2e_matrix() {
         println!("========================================================");
 
         let t0 = Instant::now();
-        let mut res = scrape(tc.tmdb_id, tc.kind, tc.season, tc.episode, Some(tc.title)).await;
+        let mut res = scrape(tc.tmdb_id, tc.kind, tc.season, tc.episode, Some(tc.title), None).await;
         
         // Single retry if network packet was throttled
         if tc.expect_success && res.is_none() {
             tokio::time::sleep(Duration::from_millis(150)).await;
-            res = scrape(tc.tmdb_id, tc.kind, tc.season, tc.episode, Some(tc.title)).await;
+            res = scrape(tc.tmdb_id, tc.kind, tc.season, tc.episode, Some(tc.title), None).await;
         }
         
         let elapsed = t0.elapsed();
