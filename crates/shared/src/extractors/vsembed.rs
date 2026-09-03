@@ -58,6 +58,16 @@ pub async fn extract_m3u8(client: &Client, src_url: &str) -> Result<Vec<Source>,
         .json::<Value>().await?;
         
     let data = &api_resp["data"];
+    
+    // Vidsrc returns fake trailers renamed as "SADiESiNK" cam-rips for unreleased
+    // movies or titles they don't have. We must filter these out so they don't
+    // override valid sources from other providers.
+    if let Some(file_name) = data["file_name"].as_str() {
+        if file_name.contains("SADiESiNK") {
+            return Err("fake trailer detected (SADiESiNK)".into());
+        }
+    }
+    
     let stream_urls_val = &data["stream_urls"];
     
     if let Some(arr) = stream_urls_val.as_array() {
