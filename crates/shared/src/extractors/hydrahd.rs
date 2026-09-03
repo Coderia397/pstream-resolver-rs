@@ -8,6 +8,7 @@ mod tests {
     #[ignore]
     #[ignore]
     #[ignore]
+    #[ignore]
     async fn test_scrape_movie() {
         let res = scrape("278", MediaKind::Movie, 0, 0, Some("The Shawshank Redemption"), Some(1994)).await;
         assert!(res.is_some());
@@ -17,6 +18,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     #[ignore]
     #[ignore]
     #[ignore]

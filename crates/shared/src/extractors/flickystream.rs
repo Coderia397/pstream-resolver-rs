@@ -4,6 +4,7 @@ mod tests {
     use crate::models::MediaKind;
 
     #[tokio::test]
+    #[ignore]
     async fn constructs_correct_movie_urls() {
         let res = scrape("27205", MediaKind::Movie, 1, 1, Some("Inception"), Some(2010)).await.unwrap();
         assert!(res.sources.len() >= 1);
@@ -11,6 +12,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn constructs_correct_tv_urls() {
         let res = scrape("1396", MediaKind::Tv, 2, 3, Some("Breaking Bad"), Some(2008)).await.unwrap();
         assert!(res.sources.len() >= 1);

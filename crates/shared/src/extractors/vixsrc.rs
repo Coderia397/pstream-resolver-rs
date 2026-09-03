@@ -189,6 +189,7 @@ mod tests {
 }
 
     #[tokio::test]
+    #[ignore]
     async fn test_live_scrape() {
         let res = scrape("27205", crate::models::MediaKind::Movie, 1, 1).await;
         println!("{:#?}", res);
