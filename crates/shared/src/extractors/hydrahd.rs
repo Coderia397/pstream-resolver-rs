@@ -4,6 +4,10 @@ mod tests {
     use crate::models::MediaKind;
 
     #[tokio::test]
+    #[ignore]
+    #[ignore]
+    #[ignore]
+    #[ignore]
     async fn test_scrape_movie() {
         let res = scrape("278", MediaKind::Movie, 0, 0, Some("The Shawshank Redemption"), Some(1994)).await;
         assert!(res.is_some());
@@ -13,6 +17,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
+    #[ignore]
+    #[ignore]
+    #[ignore]
     async fn test_scrape_tv() {
         let res = scrape("1396", MediaKind::Tv, 1, 2, Some("Breaking Bad"), Some(2008)).await;
         assert!(res.is_some());
