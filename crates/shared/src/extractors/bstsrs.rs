@@ -12,7 +12,7 @@
 //! integer to a character.
 
 use crate::extractors::find_m3u8_urls;
-use crate::http::{get_text_with, PROXY};
+use crate::http::get_text_with;
 use crate::models::{MediaKind, ProviderResult, Source};
 pub use crate::utils::slugify;
 use crate::utils::{matches_year_tolerance, sort_sources_by_quality};
@@ -225,7 +225,7 @@ pub async fn search_show_slug(title: &str, year: Option<u32>) -> Option<String> 
     let search_url = format!("{BASE}/index.php");
     let form_body = format!("menu=search&query={}", urlencoding::encode(title));
 
-    let resp = PROXY
+    let resp = crate::http::GIGA
         .post(&search_url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Referer", format!("{BASE}/"))
@@ -418,7 +418,7 @@ pub async fn scrape(
         println!("[BSTSrs] Fetching {primary_url}");
 
         if let Some(html) = get_text_with(
-            &PROXY,
+            &crate::http::GIGA,
             &primary_url,
             Duration::from_secs(8),
             &[
@@ -460,7 +460,7 @@ async fn try_fallback_search(
 
     println!("[BSTSrs] Fallback fetching {url}");
     let html = get_text_with(
-        &PROXY,
+        &crate::http::GIGA,
         &url,
         Duration::from_secs(8),
         &[

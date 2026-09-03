@@ -12,8 +12,8 @@ use axum::{
     Json, Router,
 };
 use pstream_shared::{
-    cache, cors, extractors, health, probe, quality_rank, ratelimit, subdl, youtube, MediaKind,
-    ProviderResult, Source,
+    cache, cors, extractors, health, probe, ratelimit, subdl, utils::compare_sources_adaptive,
+    youtube, MediaKind, ProviderResult, Source,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -162,18 +162,8 @@ async fn api_stream(headers: HeaderMap, Query(q): Query<StreamQuery>) -> Respons
         .flat_map(|r| r.sources.iter().cloned())
         .collect();
 
-    // Sort cross-provider sources descending by quality rank.
-    // When quality ranks are equal, prioritize direct streams (!is_embed) over embeds.
-    sources.sort_by(|a, b| {
-        let rank_a = quality_rank(&a.quality);
-        let rank_b = quality_rank(&b.quality);
-        if rank_a != rank_b {
-            return rank_b.cmp(&rank_a);
-        }
-        let embed_a = a.is_embed.unwrap_or(false);
-        let embed_b = b.is_embed.unwrap_or(false);
-        embed_a.cmp(&embed_b)
-    });
+    // Sort cross-provider sources: direct streams first, then descending quality rank.
+    sources.sort_by(compare_sources_adaptive);
 
     let payload = json!({
         "success": true,
@@ -224,6 +214,16 @@ async fn api_providers_health(headers: HeaderMap) -> Response {
     push(extractors::miruro::ID, "Miruro 🦊", true, "");
     push(extractors::bstsrs::ID, "BSTSrs 🍿", true, "");
     push(extractors::dramacool::ID, "DramaCool 🍿", true, "");
+    push(extractors::oneshows::ID, "1shows 📺", true, "");
+    push(extractors::cinemaarmyext::ID, "cinemaarmyext", true, "");
+    push(extractors::bingeflix::ID, "bingeflix", true, "");
+    push(extractors::bcine::ID, "bcine", true, "");
+    push(extractors::apexmovies::ID, "apexmovies", true, "");
+    push(extractors::hydrahd::ID, "hydrahd", true, "");
+    push(extractors::sixtysevenmovies::ID, "67Movies 🎬", true, "");
+    push(extractors::cineby::ID, "Cineby 🎥", true, "");
+    push(extractors::flickystream::ID, "FlickyStream ⚡", true, "");
+    push(extractors::spencerdevs::ID, "SpencerDevs 🚀", true, "");
     push(extractors::vixsrc::ID, "VixSrc ⚡", true, "");
     push(extractors::moviebox::ID, "MovieBox 📦", true, "");
     push(
@@ -441,6 +441,44 @@ mod tests {
         let headers = HeaderMap::new();
         let resp = api_providers_health(headers).await;
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn cross_provider_source_adaptive_sorting() {
+        let mut sources = vec![
+            Source::embed("https://embed.prov1.com/v720", "720p").tagged("Prov1", "prov1"),
+            Source::direct_m3u8("https://cdn.prov2.com/v480.mp4", "480p").tagged("Prov2", "prov2"),
+            Source::embed("https://embed.prov3.com/v1080", "1080p").tagged("Prov3", "prov3"),
+            Source::direct_m3u8("https://cdn.prov4.com/master_1080.m3u8", "1080p").tagged("Prov4", "prov4"),
+            Source::direct_m3u8("https://cdn.prov5.com/adaptive_master.m3u8", "auto").tagged("Prov5", "prov5"),
+            Source::direct_m3u8("https://cdn.prov6.com/uhd_4k.m3u8", "2160p").tagged("Prov6", "prov6"),
+        ];
+
+        sources.sort_by(compare_sources_adaptive);
+
+        // 1. Direct 4K UHD (2160p)
+        assert_eq!(sources[0].quality, "2160p");
+        assert!(sources[0].is_direct());
+
+        // 2. Direct 1080p
+        assert_eq!(sources[1].quality, "1080p");
+        assert!(sources[1].is_direct());
+
+        // 3. Direct auto master (800)
+        assert_eq!(sources[2].quality, "auto");
+        assert!(sources[2].is_direct());
+
+        // 4. Direct 480p (beats any embed!)
+        assert_eq!(sources[3].quality, "480p");
+        assert!(sources[3].is_direct());
+
+        // 5. Embed 1080p
+        assert_eq!(sources[4].quality, "1080p");
+        assert!(sources[4].is_embed());
+
+        // 6. Embed 720p
+        assert_eq!(sources[5].quality, "720p");
+        assert!(sources[5].is_embed());
     }
 }
 

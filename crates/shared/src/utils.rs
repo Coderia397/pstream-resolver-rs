@@ -179,15 +179,29 @@ pub fn normalize_quality(quality: &str) -> String {
     }
 }
 
-/// Sort a slice of `Source` structs in-place descending by quality rank.
+/// Compare two `Source` items under the strict two-tier hierarchy:
+/// 1. Direct streams (`s.is_direct()`) strictly precede iframe embeds (`s.is_embed()`).
+/// 2. Within the same tier, higher quality rank strictly precedes lower quality rank.
+pub fn compare_sources_adaptive(a: &Source, b: &Source) -> std::cmp::Ordering {
+    let embed_a = a.is_embed();
+    let embed_b = b.is_embed();
+
+    if embed_a != embed_b {
+        // false (direct) < true (embed) => direct stream sorted first
+        return embed_a.cmp(&embed_b);
+    }
+
+    let rank_a = quality_rank(&a.quality);
+    let rank_b = quality_rank(&b.quality);
+    rank_b.cmp(&rank_a)
+}
+
+/// Sort a slice of `Source` structs in-place:
+/// First by tier (direct streams before embeds), then descending by quality rank.
 ///
 /// Stable sort: preserved provider preference order for equal quality ranks.
 pub fn sort_sources_by_quality(sources: &mut [Source]) {
-    sources.sort_by(|a, b| {
-        let rank_a = quality_rank(&a.quality);
-        let rank_b = quality_rank(&b.quality);
-        rank_b.cmp(&rank_a)
-    });
+    sources.sort_by(compare_sources_adaptive);
 }
 
 #[cfg(test)]
@@ -380,5 +394,64 @@ mod tests {
 
         assert_eq!(sources[5].quality, "480p");
         assert_eq!(sources[5].url, "http://a/sd.mp4");
+    }
+
+    #[test]
+    fn compare_sources_adaptive_direct_vs_embed_and_qualities() {
+        let direct_720 = Source::direct_m3u8("http://example.com/720.m3u8", "720p");
+        let embed_1080 = Source::embed("http://example.com/embed1080", "1080p");
+        let direct_1080 = Source::direct_m3u8("http://example.com/1080.m3u8", "1080p");
+        let embed_720 = Source::embed("http://example.com/embed720", "720p");
+
+        // Direct 720p beats Embed 1080p
+        assert_eq!(compare_sources_adaptive(&direct_720, &embed_1080), std::cmp::Ordering::Less);
+        assert_eq!(compare_sources_adaptive(&embed_1080, &direct_720), std::cmp::Ordering::Greater);
+
+        // Within direct tier: 1080p beats 720p
+        assert_eq!(compare_sources_adaptive(&direct_1080, &direct_720), std::cmp::Ordering::Less);
+        assert_eq!(compare_sources_adaptive(&direct_720, &direct_1080), std::cmp::Ordering::Greater);
+
+        // Within embed tier: 1080p beats 720p
+        assert_eq!(compare_sources_adaptive(&embed_1080, &embed_720), std::cmp::Ordering::Less);
+        assert_eq!(compare_sources_adaptive(&embed_720, &embed_1080), std::cmp::Ordering::Greater);
+
+        // Equal tier and quality
+        let direct_1080_alt = Source::direct_m3u8("http://example.com/1080_alt.m3u8", "1080p");
+        assert_eq!(compare_sources_adaptive(&direct_1080, &direct_1080_alt), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn sort_sources_by_quality_two_tier_prioritizes_direct_over_embed() {
+        let mut sources = vec![
+            Source::embed("http://embed.com/1080", "1080p").tagged("ProvEmbed1080", "e1"),
+            Source::direct_m3u8("http://direct.com/480.mp4", "480p").tagged("ProvDirect480", "d1"),
+            Source::embed("http://embed.com/4k", "2160p").tagged("ProvEmbed4K", "e2"),
+            Source::direct_m3u8("http://direct.com/720.m3u8", "720p").tagged("ProvDirect720", "d2"),
+            Source::direct_m3u8("http://direct.com/1080.m3u8", "1080p").tagged("ProvDirect1080", "d3"),
+        ];
+
+        sort_sources_by_quality(&mut sources);
+
+        // Tier 1 (Direct streams): 1080p, 720p, 480p
+        assert_eq!(sources[0].url, "http://direct.com/1080.m3u8");
+        assert_eq!(sources[0].quality, "1080p");
+        assert!(sources[0].is_direct());
+
+        assert_eq!(sources[1].url, "http://direct.com/720.m3u8");
+        assert_eq!(sources[1].quality, "720p");
+        assert!(sources[1].is_direct());
+
+        assert_eq!(sources[2].url, "http://direct.com/480.mp4");
+        assert_eq!(sources[2].quality, "480p");
+        assert!(sources[2].is_direct());
+
+        // Tier 2 (Embed streams): 2160p (4K), 1080p
+        assert_eq!(sources[3].url, "http://embed.com/4k");
+        assert_eq!(sources[3].quality, "2160p");
+        assert!(sources[3].is_embed());
+
+        assert_eq!(sources[4].url, "http://embed.com/1080");
+        assert_eq!(sources[4].quality, "1080p");
+        assert!(sources[4].is_embed());
     }
 }

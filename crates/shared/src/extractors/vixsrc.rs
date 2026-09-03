@@ -106,6 +106,9 @@ pub async fn scrape(
     let anchor = step!(page.find("masterPlaylist"), "no masterPlaylist in embed page");
     let block = &page[anchor..page.len().min(anchor + BLOCK_LEN)];
 
+static ASN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"['"]asn['"]\s*:\s*['"]([^'"]+)['"]"#).expect("asn regex"));
+
     let token = step!(
         TOKEN_RE.captures(block).and_then(|c| c.get(1)),
         "no token in masterPlaylist block"
@@ -116,6 +119,9 @@ pub async fn scrape(
         "no expires in masterPlaylist block"
     )
     .as_str();
+    
+    let asn = ASN_RE.captures(block).and_then(|c| c.get(1)).map(|m| m.as_str()).unwrap_or("");
+    
     // The page escapes forward slashes inside the JS string literal.
     let playlist = step!(
         PLAYLIST_RE.captures(block).and_then(|c| c.get(1)),
@@ -126,10 +132,14 @@ pub async fn scrape(
 
     // FHD is only offered when the embed URL says the title supports it.
     let fhd = embed_url.contains("canPlayFHD=1");
-    let url = format!(
-        "{playlist}?token={token}&expires={expires}{}",
+    let mut url = format!(
+        "{playlist}{}token={token}&expires={expires}{}",
+        if playlist.contains('?') { "&" } else { "?" },
         if fhd { "&h=1" } else { "" }
     );
+    if !asn.is_empty() {
+        url.push_str(&format!("&asn={asn}"));
+    }
 
     // 3. Verify before handing it out.
     let mut h = headers();
@@ -138,7 +148,7 @@ pub async fn scrape(
     match check {
         Some(body) if body.trim_start().starts_with("#EXTM3U") => {}
         _ => {
-            println!("[VixSrc] ❌ playlist did not verify");
+            println!("[VixSrc] ❌ playlist did not verify: {:#?}", check);
             return None;
         }
     }
@@ -177,3 +187,9 @@ mod tests {
         assert!(EXPIRES_RE.captures(b).is_none());
     }
 }
+
+    #[tokio::test]
+    async fn test_live_scrape() {
+        let res = scrape("27205", crate::models::MediaKind::Movie, 1, 1).await;
+        println!("{:#?}", res);
+    }

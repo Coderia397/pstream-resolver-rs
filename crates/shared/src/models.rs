@@ -97,6 +97,17 @@ impl Source {
         self
     }
 
+    /// True when this source is a direct stream manifest (not an iframe embed).
+    #[inline]
+    pub fn is_direct(&self) -> bool {
+        !self.is_embed.unwrap_or(false)
+    }
+
+    /// True when this source is an iframe embed.
+    #[inline]
+    pub fn is_embed(&self) -> bool {
+        self.is_embed.unwrap_or(false)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,5 +147,29 @@ impl ProviderResult {
         } else {
             Some(Self::new(provider, provider_id, sources))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_direct_and_embed_helpers() {
+        let direct = Source::direct_m3u8("https://example.com/live.m3u8", "1080p");
+        assert!(direct.is_direct());
+        assert!(!direct.is_embed());
+
+        let direct_explicit = Source::direct_m3u8("https://example.com/live.m3u8", "1080p").not_embed();
+        assert!(direct_explicit.is_direct());
+        assert!(!direct_explicit.is_embed());
+
+        let embed = Source::embed("https://example.com/embed/123", "720p");
+        assert!(!embed.is_direct());
+        assert!(embed.is_embed());
+
+        let embed_m3u8 = Source::embed("https://example.com/embed/video.m3u8", "1080p");
+        assert!(!embed_m3u8.is_direct(), "Embed with .m3u8 URL is still an embed");
+        assert!(embed_m3u8.is_embed());
     }
 }

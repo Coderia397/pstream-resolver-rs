@@ -22,6 +22,16 @@ pub mod dramacool;
 pub mod miruro;
 pub mod moviebox;
 pub mod nontongo;
+pub mod oneshows;
+pub mod cinemaarmyext;
+pub mod bingeflix;
+pub mod bcine;
+pub mod apexmovies;
+pub mod hydrahd;
+pub mod sixtysevenmovies;
+pub mod cineby;
+pub mod flickystream;
+pub mod spencerdevs;
 pub mod vixsrc;
 
 /// Which shared client a provider goes out through. Most need the residential
@@ -104,6 +114,16 @@ pub async fn run_all(
         out
     }
 
+    let _oneshows = timed(oneshows::ID, oneshows::scrape(tmdb_id, kind, season, episode, title, year));
+        let _cinemaarmyext = timed(cinemaarmyext::ID, cinemaarmyext::scrape(tmdb_id, kind, season, episode, title, year));
+            let _bingeflix = timed(bingeflix::ID, bingeflix::scrape(tmdb_id, kind, season, episode, title, year));
+    let _bcine = timed(bcine::ID, bcine::scrape(tmdb_id, kind, season, episode, title, year));
+    let _apexmovies = timed(apexmovies::ID, apexmovies::scrape(tmdb_id, kind, season, episode, title, year));
+                    let _hydrahd = timed(hydrahd::ID, hydrahd::scrape(tmdb_id, kind, season, episode, title, year));
+    let _sixtysevenmovies = timed(sixtysevenmovies::ID, sixtysevenmovies::scrape(tmdb_id, kind, season, episode, title, year));
+    let _cineby = timed(cineby::ID, cineby::scrape(tmdb_id, kind, season, episode, title, year));
+    let _flickystream = timed(flickystream::ID, flickystream::scrape(tmdb_id, kind, season, episode, title, year));
+    let _spencerdevs = timed(spencerdevs::ID, spencerdevs::scrape(tmdb_id, kind, season, episode, title, year));
     let vixsrc = timed(vixsrc::ID, vixsrc::scrape(tmdb_id, kind, season, episode));
     let cinemaos = timed(cinemaos::ID, cinemaos::scrape(tmdb_id, kind, season, episode));
     let bstsrs = timed(bstsrs::ID, bstsrs::scrape(tmdb_id, kind, season, episode, title, year));
@@ -131,12 +151,22 @@ pub async fn run_all(
 
     let nontongo = async { None }; // Disabled 2026-08-26: returning 504 Gateway Timeout
 
-    let (vixsrc, cinemaos, bstsrs, dramacool, miruro, table, moviebox, nontongo) =
-        futures::join!(vixsrc, cinemaos, bstsrs, dramacool, miruro, table, moviebox, nontongo);
+    let (vixsrc, _oneshows, _cinemaarmyext, _bingeflix, _bcine, _apexmovies, _hydrahd, _sixtysevenmovies, _cineby, _flickystream, _spencerdevs, cinemaos, bstsrs, dramacool, miruro, table, moviebox, nontongo) =
+        futures::join!(vixsrc, _oneshows, _cinemaarmyext, _bingeflix, _bcine, _apexmovies, _hydrahd, _sixtysevenmovies, _cineby, _flickystream, _spencerdevs, cinemaos, bstsrs, dramacool, miruro, table, moviebox, nontongo);
 
     // Order matches the JS list: vixsrc, cinemaos, bstsrs, dramacool, miruro,
     // then table providers, moviebox, and nontongo.
-    std::iter::once(vixsrc)
+    let mut results: Vec<ProviderResult> = std::iter::once(vixsrc)
+        .chain(std::iter::once(_oneshows))
+                .chain(std::iter::once(_cinemaarmyext))
+                        .chain(std::iter::once(_bingeflix))
+        .chain(std::iter::once(_bcine))
+        .chain(std::iter::once(_apexmovies))
+                                        .chain(std::iter::once(_hydrahd))
+        .chain(std::iter::once(_sixtysevenmovies))
+        .chain(std::iter::once(_cineby))
+        .chain(std::iter::once(_flickystream))
+        .chain(std::iter::once(_spencerdevs))
         .chain(std::iter::once(cinemaos))
         .chain(std::iter::once(bstsrs))
         .chain(std::iter::once(dramacool))
@@ -145,7 +175,60 @@ pub async fn run_all(
         .chain(std::iter::once(moviebox))
         .chain(std::iter::once(nontongo))
         .flatten()
-        .collect()
+        .collect();
+
+    for res in &mut results {
+        res.sources.sort_by(crate::utils::compare_sources_adaptive);
+    }
+    results.retain(|res| !res.sources.is_empty());
+
+    // Strict two-tier provider ranking:
+    // Tier 1: Providers with direct streams (!is_embed).
+    // Tier 2: Providers with only embeds (is_embed).
+    // Within Tier 1: ranked descending by peak direct quality.
+    // Within Tier 2: ranked descending by peak embed quality.
+    results.sort_by(|a, b| {
+        let a_has_direct = a.sources.iter().any(|s| s.is_direct());
+        let b_has_direct = b.sources.iter().any(|s| s.is_direct());
+
+        if a_has_direct != b_has_direct {
+            return b_has_direct.cmp(&a_has_direct);
+        }
+
+        let a_peak = if a_has_direct {
+            a.sources
+                .iter()
+                .filter(|s| s.is_direct())
+                .map(|s| crate::utils::quality_rank(&s.quality))
+                .max()
+                .unwrap_or(0)
+        } else {
+            a.sources
+                .iter()
+                .map(|s| crate::utils::quality_rank(&s.quality))
+                .max()
+                .unwrap_or(0)
+        };
+
+        let b_peak = if b_has_direct {
+            b.sources
+                .iter()
+                .filter(|s| s.is_direct())
+                .map(|s| crate::utils::quality_rank(&s.quality))
+                .max()
+                .unwrap_or(0)
+        } else {
+            b.sources
+                .iter()
+                .map(|s| crate::utils::quality_rank(&s.quality))
+                .max()
+                .unwrap_or(0)
+        };
+
+        b_peak.cmp(&a_peak)
+    });
+
+    results
 }
 
 fn fill(template: &str, id: &str, season: u32, episode: u32) -> String {
@@ -324,4 +407,111 @@ mod tests {
         };
         assert_eq!(p.short_name(), "Miruro Anime");
     }
+
+    #[test]
+    fn test_two_tier_provider_results_sorting_and_uncontaminated_quality() {
+        let mut results = vec![
+            // Prov 1: Only Embed 1080p
+            ProviderResult::new(
+                "EmbedProv",
+                "embed_prov",
+                vec![Source::embed("https://embed.example/1080", "1080p")],
+            ),
+            // Prov 2: Direct 720p AND Embed 1080p (must NOT contaminate peak direct)
+            ProviderResult::new(
+                "MixedProv",
+                "mixed_prov",
+                vec![
+                    Source::embed("https://embed.example/1080_contam", "1080p"),
+                    Source::direct_m3u8("https://direct.example/720.m3u8", "720p"),
+                ],
+            ),
+            // Prov 3: Direct 1080p
+            ProviderResult::new(
+                "DirectHDProv",
+                "direct_hd_prov",
+                vec![Source::direct_m3u8("https://direct.example/1080.m3u8", "1080p")],
+            ),
+            // Prov 4: Direct 480p (SD fallback)
+            ProviderResult::new(
+                "DirectSDProv",
+                "direct_sd_prov",
+                vec![Source::direct_m3u8("https://direct.example/480.mp4", "480p")],
+            ),
+            // Prov 5: Only Embed 720p
+            ProviderResult::new(
+                "EmbedSDProv",
+                "embed_sd_prov",
+                vec![Source::embed("https://embed.example/720", "720p")],
+            ),
+        ];
+
+        for res in &mut results {
+            res.sources.sort_by(crate::utils::compare_sources_adaptive);
+        }
+        results.retain(|res| !res.sources.is_empty());
+
+        results.sort_by(|a, b| {
+            let a_has_direct = a.sources.iter().any(|s| s.is_direct());
+            let b_has_direct = b.sources.iter().any(|s| s.is_direct());
+
+            if a_has_direct != b_has_direct {
+                return b_has_direct.cmp(&a_has_direct);
+            }
+
+            let a_peak = if a_has_direct {
+                a.sources
+                    .iter()
+                    .filter(|s| s.is_direct())
+                    .map(|s| crate::utils::quality_rank(&s.quality))
+                    .max()
+                    .unwrap_or(0)
+            } else {
+                a.sources
+                    .iter()
+                    .map(|s| crate::utils::quality_rank(&s.quality))
+                    .max()
+                    .unwrap_or(0)
+            };
+
+            let b_peak = if b_has_direct {
+                b.sources
+                    .iter()
+                    .filter(|s| s.is_direct())
+                    .map(|s| crate::utils::quality_rank(&s.quality))
+                    .max()
+                    .unwrap_or(0)
+            } else {
+                b.sources
+                    .iter()
+                    .map(|s| crate::utils::quality_rank(&s.quality))
+                    .max()
+                    .unwrap_or(0)
+            };
+
+            b_peak.cmp(&a_peak)
+        });
+
+        // 1. First provider MUST be Direct 1080p (DirectHDProv)
+        assert_eq!(results[0].provider_id, "direct_hd_prov");
+
+        // 2. Second provider MUST be Direct 720p (MixedProv), beating direct 480p and embed 1080p
+        assert_eq!(results[1].provider_id, "mixed_prov");
+        // Inside MixedProv, direct 720p must precede embed 1080p
+        assert!(results[1].sources[0].is_direct());
+        assert_eq!(results[1].sources[0].quality, "720p");
+        assert!(results[1].sources[1].is_embed());
+        assert_eq!(results[1].sources[1].quality, "1080p");
+
+        // 3. Third provider MUST be Direct 480p (DirectSDProv), beating all embeds
+        assert_eq!(results[2].provider_id, "direct_sd_prov");
+        assert_eq!(results[2].sources[0].quality, "480p");
+
+        // 4. Fourth provider is Embed 1080p (EmbedProv)
+        assert_eq!(results[3].provider_id, "embed_prov");
+
+        // 5. Fifth provider is Embed 720p (EmbedSDProv)
+        assert_eq!(results[4].provider_id, "embed_sd_prov");
+    }
 }
+pub mod vsembed;

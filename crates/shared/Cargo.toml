@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Provider extractors, HTTP clients, proxy and policy shared by the pstream resolver and backend"
 
 [dependencies]
-tokio.workspace       = true
+tokio = { workspace = true, features = ["rt", "macros"] }
 axum.workspace        = true
 reqwest.workspace     = true
 serde.workspace       = true
@@ -22,3 +22,7 @@ sha2.workspace        = true
 aes-gcm.workspace     = true
 pbkdf2.workspace      = true
 hex.workspace         = true
+anyhow = "1.0.104"
+md5 = "0.8.1"
+wasmi = "0.36"
+base64 = "0.22"

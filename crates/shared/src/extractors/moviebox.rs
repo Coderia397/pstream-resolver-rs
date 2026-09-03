@@ -342,6 +342,9 @@ pub async fn scrape(title: &str, year: Option<u32>) -> Option<ProviderResult> {
         .header("Accept", JSON_ACCEPT)
         .header("Origin", SEARCH_ORIGIN)
         .header("Referer", SEARCH_REFERER)
+        .header("env", "prod")
+        .header("callerSource", "node-frontend")
+        .header("clientType", "web")
         .timeout(Duration::from_secs(8))
         .json(&search_body)
         .send()
@@ -729,4 +732,10 @@ mod tests {
             Some("https://movieboxonline.net/")
         );
     }
+}
+
+#[tokio::test]
+async fn test_live_moviebox_bug() {
+    let resp = crate::http::GIGA.post(SEARCH_API).header("Content-Type", "application/json").header("Origin", SEARCH_ORIGIN).header("Referer", SEARCH_REFERER).json(&serde_json::json!({"keyword": "Inception", "page": 1, "perPage": 10, "subjectType": 0})).send().await.unwrap(); println!("Status: {}", resp.status()); println!("Body: {}", resp.text().await.unwrap());
+    println!("RESULT: None");
 }
