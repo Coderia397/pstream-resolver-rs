@@ -1,0 +1,120 @@
+# P-Stream Frontend — File Tree
+# Generated: 2026-09-09 10:12:00
+# Root: /home/ibrahim/code/pstream/pstream-resolver-rs
+
+pstream-resolver-rs/
+├── .cargo/
+│   └── config.toml  (22 lines)
+├── .feedback/
+│   ├── entry_1.txt  (1 lines)
+│   ├── entry_10.txt  (1 lines)
+│   ├── entry_11.txt  (1 lines)
+│   ├── entry_12.txt  (1 lines)
+│   ├── entry_13.txt  (1 lines)
+│   ├── entry_14.txt  (1 lines)
+│   ├── entry_15.txt  (1 lines)
+│   ├── entry_16.txt  (1 lines)
+│   ├── entry_17.txt  (1 lines)
+│   ├── entry_18.txt  (1 lines)
+│   ├── entry_19.txt  (1 lines)
+│   ├── entry_2.txt  (1 lines)
+│   ├── entry_20.txt  (1 lines)
+│   ├── entry_3.txt  (1 lines)
+│   ├── entry_4.txt  (1 lines)
+│   ├── entry_5.txt  (1 lines)
+│   ├── entry_6.txt  (1 lines)
+│   ├── entry_7.txt  (1 lines)
+│   ├── entry_8.txt  (1 lines)
+│   └── entry_9.txt  (1 lines)
+├── .github/
+│   └── workflows/
+│       └── release.yml  (84 lines)
+├── crates/
+│   ├── resolver/
+│   │   ├── src/
+│   │   │   ├── bin/
+│   │   │   └── main.rs  (484 lines)
+│   │   ├── build.rs  (16 lines)
+│   │   └── Cargo.toml  (20 lines)
+│   └── shared/
+│       ├── src/
+│       │   ├── extractors/
+│       │   │   ├── apexmovies.rs  (53 lines)
+│       │   │   ├── bcine.rs  (32 lines)
+│       │   │   ├── bingeflix.rs  (69 lines)
+│       │   │   ├── bstsrs.rs  (650 lines)
+│       │   │   ├── cineby.rs  (57 lines)
+│       │   │   ├── cinemaarmyext.rs  (38 lines)
+│       │   │   ├── cinemaos.rs  (174 lines)
+│       │   │   ├── dramacool.rs  (660 lines)
+│       │   │   ├── flickystream.rs  (57 lines)
+│       │   │   ├── hydrahd.rs  (82 lines)
+│       │   │   ├── miruro.rs  (485 lines)
+│       │   │   ├── mod.rs  (517 lines)
+│       │   │   ├── moviebox.rs  (741 lines)
+│       │   │   ├── nontongo.rs  (135 lines)
+│       │   │   ├── oneshows.rs  (57 lines)
+│       │   │   ├── sixtysevenmovies.rs  (57 lines)
+│       │   │   ├── spencerdevs.rs  (38 lines)
+│       │   │   ├── vixsrc.rs  (196 lines)
+│       │   │   └── vsembed.rs  (149 lines)
+│       │   ├── cache.rs  (75 lines)
+│       │   ├── cors.rs  (106 lines)
+│       │   ├── health.rs  (74 lines)
+│       │   ├── http.rs  (139 lines)
+│       │   ├── lib.rs  (28 lines)
+│       │   ├── models.rs  (175 lines)
+│       │   ├── probe.rs  (183 lines)
+│       │   ├── ratelimit.rs  (117 lines)
+│       │   ├── subdl.rs  (65 lines)
+│       │   ├── utils.rs  (457 lines)
+│       │   └── youtube.rs  (118 lines)
+│       ├── tests/
+│       │   ├── adversarial_ambiguous_title_remake_disambiguation.rs  (833 lines)
+│       │   ├── adversarial_dramacool.rs  (615 lines)
+│       │   ├── adversarial_dramacool_resilience.rs  (173 lines)
+│       │   ├── adversarial_moviebox_nontongo.rs  (512 lines)
+│       │   ├── adversarial_quality_resolution_maximization.rs  (439 lines)
+│       │   ├── catalog_sweep.rs  (50 lines)
+│       │   ├── duration_check.rs  (31 lines)
+│       │   ├── full_resolver_sweep.rs  (56 lines)
+│       │   ├── live_dynamic_probe_spiderman.rs  (85 lines)
+│       │   ├── live_miruro_dramacool.rs  (32 lines)
+│       │   ├── live_moviebox_e2e_probe.rs  (119 lines)
+│       │   ├── live_verification_m1.rs  (201 lines)
+│       │   ├── probe_moviebox_headers.rs  (64 lines)
+│       │   ├── search_header_matrix.rs  (41 lines)
+│       │   └── stream_probe.rs  (38 lines)
+│       └── Cargo.toml  (28 lines)
+├── deploy/
+│   ├── pstream-env.example  (24 lines)
+│   ├── README.md  (111 lines)
+│   └── start-pstream.sh  (139 lines)
+├── .gitignore  (2 lines)
+├── Cargo.lock  (2,155 lines)
+├── Cargo.toml  (49 lines)
+├── file_tree_frondend.txt  (16,220 lines)
+├── LICENSE  (21 lines)
+├── patch.diff  (18 lines)
+├── README.md  (95 lines)
+├── temp_episode.html  (155 lines)
+├── test_nonce  (4.3MB)
+├── test_nonce.rs  (1 lines)
+├── update_file_tree.py  (207 lines)
+└── urls.txt  (0 lines)
+
+# 13 directories, 86 files, 28,944 total lines of code
+
+# Breakdown by extension (files, lines of code):
+#   .txt           22 files    16,240 lines
+#   .rs            48 files     9,574 lines
+#   .lock           1 files     2,155 lines
+#   .py             1 files       207 lines
+#   .md             2 files       206 lines
+#   .html           1 files       155 lines
+#   .sh             1 files       139 lines
+#   .toml           4 files       119 lines
+#   .yml            1 files        84 lines
+#   .example        1 files        24 lines
+#   (no ext)        3 files        23 lines
+#   .diff           1 files        18 lines

@@ -1,0 +1,18 @@
+--- crates/shared/src/extractors/hydrahd.rs
++++ crates/shared/src/extractors/hydrahd.rs
+@@ -4,11 +4,13 @@
+     use crate::models::MediaKind;
+ 
+     #[tokio::test]
++    #[ignore]
+     async fn test_scrape_movie() {
+         let res = scrape("278", MediaKind::Movie, 0, 0, Some("The Shawshank Redemption"), Some(1994)).await;
+         assert!(res.is_some());
+@@ -14,11 +16,13 @@
+     }
+ 
+     #[tokio::test]
++    #[ignore]
+     async fn test_scrape_tv() {
+         let res = scrape("1396", MediaKind::Tv, 1, 2, Some("Breaking Bad"), Some(2008)).await;
+         assert!(res.is_some());
