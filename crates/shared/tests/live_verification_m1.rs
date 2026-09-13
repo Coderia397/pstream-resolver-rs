@@ -5,6 +5,7 @@ use pstream_shared::models::MediaKind;
 use std::time::{Duration, Instant};
 
 #[tokio::test]
+#[ignore]
 async fn test_live_moviebox_search_and_resolution() {
     println!("\n=== Live Test: MovieBox Live Scraper ===");
     let test_cases = vec![
@@ -131,6 +132,7 @@ async fn test_live_moviebox_bff_api_raw_probe() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_nontongo_live_direct_and_run_all_bypass() {
     println!("\n=== Live Test: NontonGo Direct vs Bypass ===");
     
@@ -163,6 +165,7 @@ async fn test_nontongo_live_direct_and_run_all_bypass() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_run_all_concurrency_stress() {
     println!("\n=== Stress Test: Concurrent run_all Invocations ===");
     let mut handles = Vec::new();

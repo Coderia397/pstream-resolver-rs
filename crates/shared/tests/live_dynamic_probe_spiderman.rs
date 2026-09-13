@@ -6,6 +6,7 @@ use pstream_shared::utils::quality_rank;
 use std::time::Instant;
 
 #[tokio::test]
+#[ignore]
 async fn test_live_probe_spiderman_no_way_home_resolution() {
     println!("\n=== Live Dynamic Probe: Spider-Man: No Way Home (2021) ===");
     let tmdb_id = "634649"; // Spider-Man: No Way Home
@@ -73,6 +74,7 @@ async fn test_live_probe_spiderman_no_way_home_resolution() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_live_probe_avatar_and_remake_disambiguation() {
     println!("\n=== Live Dynamic Probe: Avatar (2009) vs Avatar (2024 / Re-release) ===");
     

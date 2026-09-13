@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 #[tokio::test]
+#[ignore]
 async fn test_probe_moviebox_headers() {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))

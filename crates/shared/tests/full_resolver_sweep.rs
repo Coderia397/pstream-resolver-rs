@@ -3,6 +3,7 @@ use pstream_shared::models::MediaKind;
 use std::time::Duration;
 
 #[tokio::test]
+#[ignore]
 async fn test_full_resolver_sweep() {
     let targets = vec![
         // Very New

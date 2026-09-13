@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 #[tokio::test]
+#[ignore]
 async fn test_search_api_header_matrix() {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))

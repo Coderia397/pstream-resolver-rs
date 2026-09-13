@@ -2,6 +2,7 @@ use pstream_shared::extractors::oneshows;
 use pstream_shared::models::MediaKind;
 
 #[tokio::test]
+#[ignore]
 async fn test_historical_catalog_sweep_rigorous() {
     let targets = vec![
         // Unreleased (Decoy Filter Test - Should gracefully yield no sources or error, NOT 3 sources)

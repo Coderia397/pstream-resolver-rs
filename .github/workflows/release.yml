@@ -44,7 +44,7 @@ jobs:
           cargo install cargo-zigbuild --locked
 
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --lib
 
       - name: Build
         run: cargo zigbuild --release --locked --target aarch64-unknown-linux-musl

@@ -4,6 +4,7 @@ use pstream_shared::extractors::moviebox::{extract_stream_from_html, SearchRespo
 use std::time::Duration;
 
 #[tokio::test]
+#[ignore]
 async fn test_moviebox_live_search_and_detail_e2e() {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))

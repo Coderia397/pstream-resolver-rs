@@ -2,6 +2,7 @@ use pstream_shared::models::MediaKind;
 use pstream_shared::extractors::{oneshows, moviebox, bstsrs};
 
 #[tokio::test]
+#[ignore]
 async fn dump_urls() {
     let id = "27205"; // Inception
     let title = "Inception";

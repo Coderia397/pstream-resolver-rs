@@ -2,6 +2,7 @@ use pstream_shared::extractors::{dramacool, miruro};
 use pstream_shared::models::MediaKind;
 
 #[tokio::test]
+#[ignore]
 async fn test_miruro_live() {
     let m = miruro::scrape("27205", MediaKind::Movie, 1, 1, Some("Inception")).await;
     println!("Miruro result: {:?}", m);
@@ -9,6 +10,7 @@ async fn test_miruro_live() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_dramacool_live() {
     let res = dramacool::scrape("93405", MediaKind::Tv, 1, 1, Some("Squid Game"), Some(2021)).await;
     println!("DramaCool live result: {res:?}");

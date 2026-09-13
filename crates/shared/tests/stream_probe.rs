@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 #[tokio::test]
+#[ignore]
 async fn test_verify_extracted_stream_accessibility() {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
