@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use pstream_shared::{
-    cache, cors, extractors, health, probe, ratelimit, subdl, utils::compare_sources_adaptive,
+    cache, cors, extractors, health, probe, ratelimit, subdl, utils,
     youtube, MediaKind, ProviderResult, Source,
 };
 use serde::Deserialize;
@@ -58,6 +58,10 @@ struct StreamQuery {
     /// only participate when the caller supplies one.
     title: Option<String>,
     year: Option<u32>,
+    #[serde(alias = "origLang", alias = "original_lang")]
+    orig_lang: Option<String>,
+    #[serde(alias = "preferredAudio", alias = "pref_audio")]
+    preferred_audio: Option<String>,
 }
 
 /// TMDB ids go straight into provider URL paths (`/api/tv/{id}/{season}/…`),
@@ -140,11 +144,14 @@ async fn api_stream(headers: HeaderMap, Query(q): Query<StreamQuery>) -> Respons
             .into_response();
     }
 
+    let orig_lang = q.orig_lang.as_deref();
+    let preferred_audio = q.preferred_audio.as_deref().unwrap_or("en");
+
     // Order is preserved, so `working[0]` is the earliest-listed provider that
     // succeeded — matching the JS, which names that one as the headline
     // provider even though every source is returned.
     let working: Vec<ProviderResult> =
-        extractors::run_all(&tmdb_id, kind, season, episode, title.as_deref(), q.year).await;
+        extractors::run_all_with_lang(&tmdb_id, kind, season, episode, title.as_deref(), q.year, orig_lang).await;
 
     let Some(winner) = working.first() else {
         return err_json(
@@ -162,8 +169,8 @@ async fn api_stream(headers: HeaderMap, Query(q): Query<StreamQuery>) -> Respons
         .flat_map(|r| r.sources.iter().cloned())
         .collect();
 
-    // Sort cross-provider sources: direct streams first, then descending quality rank.
-    sources.sort_by(compare_sources_adaptive);
+    // Sort cross-provider sources: direct streams first, audio affinity, then descending quality rank.
+    sources.sort_by(|a, b| utils::compare_sources_with_lang_adaptive(a, b, orig_lang, Some(preferred_audio)));
 
     let payload = json!({
         "success": true,
