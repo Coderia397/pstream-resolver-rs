@@ -179,10 +179,209 @@ pub fn normalize_quality(quality: &str) -> String {
     }
 }
 
-/// Compare two `Source` items under the strict two-tier hierarchy:
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioMetadata {
+    pub audio: Option<String>,
+    pub audio_languages: Vec<String>,
+    pub is_original: bool,
+    pub is_multi_audio: bool,
+}
+
+/// Detect audio language and original/dub status from URL, title, and provider hints.
+pub fn detect_audio_metadata(
+    url: &str,
+    title_hint: Option<&str>,
+    provider_id: Option<&str>,
+) -> AudioMetadata {
+    let lower_url = url.to_ascii_lowercase();
+    let lower_title = title_hint.map(|t| t.to_ascii_lowercase()).unwrap_or_default();
+    let combined = format!("{} {}", lower_url, lower_title);
+
+    // Multi-audio / dual-audio check
+    let is_multi = combined.contains("multi")
+        || combined.contains("dual")
+        || combined.contains("2audio")
+        || combined.contains("tri-audio");
+
+    if is_multi {
+        return AudioMetadata {
+            audio: Some("multi".to_string()),
+            audio_languages: vec!["en".to_string()],
+            is_original: true,
+            is_multi_audio: true,
+        };
+    }
+
+    // Provider-specific explicit defaults
+    if let Some(pid) = provider_id {
+        match pid {
+            "vixsrc" => {
+                if lower_url.contains("lang=en") {
+                    return AudioMetadata {
+                        audio: Some("en".to_string()),
+                        audio_languages: vec!["en".to_string()],
+                        is_original: true,
+                        is_multi_audio: true,
+                    };
+                }
+            }
+            "moviebox" => {
+                return AudioMetadata {
+                    audio: Some("en".to_string()),
+                    audio_languages: vec!["en".to_string()],
+                    is_original: true,
+                    is_multi_audio: false,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    // Helper token matcher checking word boundaries (dots, hyphens, slashes, underscores, spaces)
+    let has_token = |tokens: &[&str]| -> bool {
+        for t in tokens {
+            for delim_start in ['.', '-', '_', '/', ' ', '?', '&', '=', '[', '('] {
+                for delim_end in ['.', '-', '_', '/', ' ', '?', '&', '=', ']', ')'] {
+                    let pat = format!("{}{}{}", delim_start, t, delim_end);
+                    if combined.contains(&pat) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    };
+
+    // Foreign dub checks
+    if has_token(&["ru", "rus", "russian", "dub-ru", "ru-dub", "dub.ru", "dvo", "mvo"])
+        || combined.contains(".ru/")
+        || combined.contains("vsembed.ru")
+        || combined.contains("дубляж")
+        || combined.contains("озвучка")
+    {
+        return AudioMetadata {
+            audio: Some("ru".to_string()),
+            audio_languages: vec!["ru".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["ita", "italian", "italiano", "doppiaggio"]) {
+        return AudioMetadata {
+            audio: Some("it".to_string()),
+            audio_languages: vec!["it".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["esp", "castellano", "latino", "spanish", "espanol", "doblaje"]) {
+        return AudioMetadata {
+            audio: Some("es".to_string()),
+            audio_languages: vec!["es".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["fre", "french", "francais", "vff", "vfq", "truefrench"])
+        || (has_token(&["vf"]) && !combined.contains("vostfr"))
+    {
+        return AudioMetadata {
+            audio: Some("fr".to_string()),
+            audio_languages: vec!["fr".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["ger", "german", "deutsch", "synchron"]) {
+        return AudioMetadata {
+            audio: Some("de".to_string()),
+            audio_languages: vec!["de".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["hin", "hindi", "tel", "tam", "tamil", "telugu", "bollywood"]) {
+        return AudioMetadata {
+            audio: Some("hi".to_string()),
+            audio_languages: vec!["hi".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["jap", "japanese", "jpn"]) {
+        return AudioMetadata {
+            audio: Some("ja".to_string()),
+            audio_languages: vec!["ja".to_string()],
+            is_original: true,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["kor", "korean"]) {
+        return AudioMetadata {
+            audio: Some("ko".to_string()),
+            audio_languages: vec!["ko".to_string()],
+            is_original: true,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["por", "portuguese", "pt-br", "dublado"]) {
+        return AudioMetadata {
+            audio: Some("pt".to_string()),
+            audio_languages: vec!["pt".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    if has_token(&["tur", "turkish", "turkce"]) {
+        return AudioMetadata {
+            audio: Some("tr".to_string()),
+            audio_languages: vec!["tr".to_string()],
+            is_original: false,
+            is_multi_audio: false,
+        };
+    }
+
+    // English markers
+    if has_token(&["eng", "english", "en", "vo", "vostfr", "vost"])
+        || combined.contains("lang=en")
+        || combined.contains("/en/")
+    {
+        return AudioMetadata {
+            audio: Some("en".to_string()),
+            audio_languages: vec!["en".to_string()],
+            is_original: true,
+            is_multi_audio: false,
+        };
+    }
+
+    // Neutral / Untagged
+    AudioMetadata {
+        audio: None,
+        audio_languages: Vec::new(),
+        is_original: false,
+        is_multi_audio: false,
+    }
+}
+
+/// Compare two `Source` items under the multi-tier hierarchy:
 /// 1. Direct streams (`s.is_direct()`) strictly precede iframe embeds (`s.is_embed()`).
-/// 2. Within the same tier, higher quality rank strictly precedes lower quality rank.
-pub fn compare_sources_adaptive(a: &Source, b: &Source) -> std::cmp::Ordering {
+/// 2. Audio language affinity score strictly precedes quality rank (Original / English / Multi > foreign dub).
+/// 3. Within the same tier and audio affinity, higher quality rank strictly precedes lower quality rank.
+pub fn compare_sources_with_lang_adaptive(
+    a: &Source,
+    b: &Source,
+    orig_lang: Option<&str>,
+    preferred_lang: Option<&str>,
+) -> std::cmp::Ordering {
     let embed_a = a.is_embed();
     let embed_b = b.is_embed();
 
@@ -191,17 +390,36 @@ pub fn compare_sources_adaptive(a: &Source, b: &Source) -> std::cmp::Ordering {
         return embed_a.cmp(&embed_b);
     }
 
+    let score_a = a.audio_score(orig_lang, preferred_lang);
+    let score_b = b.audio_score(orig_lang, preferred_lang);
+    if score_a != score_b {
+        // higher score first
+        return score_b.cmp(&score_a);
+    }
+
     let rank_a = quality_rank(&a.quality);
     let rank_b = quality_rank(&b.quality);
     rank_b.cmp(&rank_a)
 }
 
+/// Compare two `Source` items with default English / Original audio preference.
+pub fn compare_sources_adaptive(a: &Source, b: &Source) -> std::cmp::Ordering {
+    compare_sources_with_lang_adaptive(a, b, None, Some("en"))
+}
+
 /// Sort a slice of `Source` structs in-place:
-/// First by tier (direct streams before embeds), then descending by quality rank.
-///
-/// Stable sort: preserved provider preference order for equal quality ranks.
+/// Direct streams before embeds, higher audio affinity before foreign dubs, then descending by quality rank.
 pub fn sort_sources_by_quality(sources: &mut [Source]) {
     sources.sort_by(compare_sources_adaptive);
+}
+
+/// Sort a slice of `Source` structs in-place with explicit original and preferred language awareness.
+pub fn sort_sources_with_lang(
+    sources: &mut [Source],
+    orig_lang: Option<&str>,
+    preferred_lang: Option<&str>,
+) {
+    sources.sort_by(|a, b| compare_sources_with_lang_adaptive(a, b, orig_lang, preferred_lang));
 }
 
 #[cfg(test)]
@@ -453,5 +671,82 @@ mod tests {
         assert_eq!(sources[4].url, "http://embed.com/1080");
         assert_eq!(sources[4].quality, "1080p");
         assert!(sources[4].is_embed());
+    }
+
+    #[test]
+    fn detect_audio_metadata_identifies_lexicon_tokens() {
+        let meta_multi = detect_audio_metadata("http://cdn.com/movie.2024.multi.1080p.m3u8", None, None);
+        assert_eq!(meta_multi.audio.as_deref(), Some("multi"));
+        assert!(meta_multi.is_multi_audio);
+        assert!(meta_multi.is_original);
+
+        let meta_ru = detect_audio_metadata("http://cdn.com/movie.dub.ru.m3u8", None, None);
+        assert_eq!(meta_ru.audio.as_deref(), Some("ru"));
+        assert!(!meta_ru.is_original);
+
+        let meta_vsembed = detect_audio_metadata("https://vsembed.ru/vs_src.php?id=123", None, None);
+        assert_eq!(meta_vsembed.audio.as_deref(), Some("ru"));
+
+        let meta_ita = detect_audio_metadata("http://cdn.com/film.italian.1080p.m3u8", None, None);
+        assert_eq!(meta_ita.audio.as_deref(), Some("it"));
+        assert!(!meta_ita.is_original);
+
+        let meta_es = detect_audio_metadata("http://cdn.com/pelicula.latino.720p.m3u8", None, None);
+        assert_eq!(meta_es.audio.as_deref(), Some("es"));
+        assert!(!meta_es.is_original);
+
+        let meta_vixsrc_en = detect_audio_metadata("https://vixsrc.to/playlist/123?lang=en", None, Some("vixsrc"));
+        assert_eq!(meta_vixsrc_en.audio.as_deref(), Some("en"));
+        assert!(meta_vixsrc_en.is_original);
+
+        let meta_moviebox = detect_audio_metadata("https://macdn.aoneroom.com/video.mp4", None, Some("moviebox"));
+        assert_eq!(meta_moviebox.audio.as_deref(), Some("en"));
+        assert!(meta_moviebox.is_original);
+
+        let meta_ja = detect_audio_metadata("http://cdn.com/anime.japanese.1080p.m3u8", None, None);
+        assert_eq!(meta_ja.audio.as_deref(), Some("ja"));
+        assert!(meta_ja.is_original);
+    }
+
+    #[test]
+    fn adaptive_sorting_prioritizes_english_over_foreign_high_res() {
+        let direct_en_720 = Source::direct_m3u8("http://cdn.com/en_720.m3u8", "720p")
+            .with_audio("en", true);
+        let direct_ru_1080 = Source::direct_m3u8("http://cdn.com/ru_1080.m3u8", "1080p")
+            .with_audio("ru", false);
+        let direct_it_4k = Source::direct_m3u8("http://cdn.com/it_4k.m3u8", "2160p")
+            .with_audio("it", false);
+        let direct_multi_1080 = Source::direct_m3u8("http://cdn.com/multi_1080.m3u8", "1080p")
+            .with_audio("multi", true);
+
+        // English 720p beats Russian 1080p and Italian 4K dubs
+        assert_eq!(compare_sources_adaptive(&direct_en_720, &direct_ru_1080), std::cmp::Ordering::Less);
+        assert_eq!(compare_sources_adaptive(&direct_en_720, &direct_it_4k), std::cmp::Ordering::Less);
+
+        // Multi-audio 1080p beats English 720p (multi-audio has score 4, en has score 4, but multi has 1080p vs 720p)
+        assert_eq!(compare_sources_adaptive(&direct_multi_1080, &direct_en_720), std::cmp::Ordering::Less);
+
+        // Within foreign dubs: higher quality wins (Italian 4K beats Russian 1080p)
+        assert_eq!(compare_sources_adaptive(&direct_it_4k, &direct_ru_1080), std::cmp::Ordering::Less);
+
+        // Direct foreign dub still beats Embed English stream (direct tier is preserved)
+        let embed_en_1080 = Source::embed("http://embed.com/en", "1080p").with_audio("en", true);
+        assert_eq!(compare_sources_adaptive(&direct_ru_1080, &embed_en_1080), std::cmp::Ordering::Less);
+    }
+
+    #[test]
+    fn adaptive_sorting_prioritizes_original_language_when_specified() {
+        let direct_ja_720 = Source::direct_m3u8("http://cdn.com/ja_720.m3u8", "720p")
+            .with_audio("ja", true);
+        let direct_en_1080 = Source::direct_m3u8("http://cdn.com/en_1080.m3u8", "1080p")
+            .with_audio("en", false);
+
+        // When orig_lang is Japanese (anime), Japanese 720p beats English dub 1080p!
+        let cmp = compare_sources_with_lang_adaptive(&direct_ja_720, &direct_en_1080, Some("ja"), Some("en"));
+        assert_eq!(cmp, std::cmp::Ordering::Less);
+
+        // When orig_lang is not specified, English 1080p beats Japanese (due to quality rank)
+        let cmp_default = compare_sources_adaptive(&direct_en_1080, &direct_ja_720);
+        assert_eq!(cmp_default, std::cmp::Ordering::Less);
     }
 }
