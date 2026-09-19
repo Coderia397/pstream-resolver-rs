@@ -403,7 +403,8 @@ pub async fn scrape(title: &str, year: Option<u32>) -> Option<ProviderResult> {
 
     let mut source = Source::direct_m3u8(&stream_url, quality)
         .tagged("MovieBox", ID)
-        .with_referer(REFERER);
+        .with_referer(REFERER)
+        .with_audio("en", true);
     source.is_m3u8 = is_m3u8;
 
     Some(ProviderResult::new(NAME, ID, vec![source]))

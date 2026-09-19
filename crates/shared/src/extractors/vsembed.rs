@@ -141,7 +141,15 @@ pub async fn extract_m3u8(client: &Client, src_url: &str) -> Result<Vec<Source>,
     for url in result.split('\n') {
         let url = url.trim();
         if !url.is_empty() {
-            sources.push(Source::direct_m3u8(url.to_string(), "auto".to_string()));
+            let meta = crate::utils::detect_audio_metadata(url, None, Some("vsembed"));
+            let mut s = Source::direct_m3u8(url.to_string(), "auto".to_string());
+            if let Some(audio) = meta.audio {
+                s = s.with_audio(audio, meta.is_original);
+            }
+            if meta.is_multi_audio {
+                s = s.with_multi_audio(meta.audio_languages);
+            }
+            sources.push(s);
         }
     }
     

@@ -238,7 +238,8 @@ pub fn extract_sources_from_html(html: &str) -> Vec<Source> {
 
             let s = Source::direct_m3u8(&m3u8_url, quality)
                 .tagged("DramaCool", ID)
-                .with_referer(BASE);
+                .with_referer(BASE)
+                .with_audio("ko", true);
             sources.push(s);
         }
     }
@@ -310,6 +311,13 @@ pub fn parse_search_slug(html: &str, title: &str, target_year: Option<u32>) -> O
             }
             let c_slug = &c.slug;
             let c_title_slug = slugify(&c.title);
+            if target_slug.len() < 4 {
+                // For short titles ("it", "her", "up"), require exact match or hyphenated prefix
+                return c_slug == &target_slug
+                    || c_slug.starts_with(&format!("{target_slug}-"))
+                    || c_title_slug == target_slug
+                    || c_title_slug.starts_with(&format!("{target_slug}-"));
+            }
             c_slug == &target_slug
                 || c_slug.starts_with(&format!("{target_slug}-"))
                 || c_slug.contains(&target_slug)
@@ -322,11 +330,10 @@ pub fn parse_search_slug(html: &str, title: &str, target_year: Option<u32>) -> O
         })
         .collect();
 
-    let pool = if relevant.is_empty() {
-        candidates.iter().collect::<Vec<_>>()
-    } else {
-        relevant
-    };
+    if relevant.is_empty() {
+        return None;
+    }
+    let pool = relevant;
 
     if let Some(target_y) = target_year {
         // Priority 1: Exact title match AND exact year

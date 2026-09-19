@@ -104,6 +104,18 @@ pub async fn run_all(
     title: Option<&str>,
     year: Option<u32>,
 ) -> Vec<ProviderResult> {
+    run_all_with_lang(tmdb_id, kind, season, episode, title, year, None).await
+}
+
+pub async fn run_all_with_lang(
+    tmdb_id: &str,
+    kind: MediaKind,
+    season: u32,
+    episode: u32,
+    title: Option<&str>,
+    year: Option<u32>,
+    orig_lang: Option<&str>,
+) -> Vec<ProviderResult> {
     async fn timed<F>(id: &'static str, fut: F) -> Option<ProviderResult>
     where
         F: std::future::Future<Output = Option<ProviderResult>>,
@@ -178,21 +190,39 @@ pub async fn run_all(
         .collect();
 
     for res in &mut results {
-        res.sources.sort_by(crate::utils::compare_sources_adaptive);
+        for s in &mut res.sources {
+            if s.audio.is_none() {
+                let meta = crate::utils::detect_audio_metadata(&s.url, title, s.provider_id.as_deref());
+                if let Some(a) = meta.audio {
+                    s.audio = Some(a);
+                    s.is_original = Some(meta.is_original);
+                }
+                if meta.is_multi_audio {
+                    s.is_multi_audio = Some(true);
+                    s.audio_languages = meta.audio_languages;
+                }
+            }
+        }
+        res.sources.sort_by(|a, b| crate::utils::compare_sources_with_lang_adaptive(a, b, orig_lang, Some("en")));
     }
     results.retain(|res| !res.sources.is_empty());
 
-    // Strict two-tier provider ranking:
-    // Tier 1: Providers with direct streams (!is_embed).
-    // Tier 2: Providers with only embeds (is_embed).
-    // Within Tier 1: ranked descending by peak direct quality.
-    // Within Tier 2: ranked descending by peak embed quality.
+    // Multi-tier provider ranking:
+    // 1. Providers with direct streams (!is_embed) strictly precede embed-only providers.
+    // 2. Higher peak audio affinity strictly precedes lower audio affinity (Original / English / Multi > foreign dub).
+    // 3. Higher peak resolution quality strictly precedes lower resolution quality.
     results.sort_by(|a, b| {
         let a_has_direct = a.sources.iter().any(|s| s.is_direct());
         let b_has_direct = b.sources.iter().any(|s| s.is_direct());
 
         if a_has_direct != b_has_direct {
             return b_has_direct.cmp(&a_has_direct);
+        }
+
+        let a_audio_peak = a.sources.iter().map(|s| s.audio_score(orig_lang, Some("en"))).max().unwrap_or(0);
+        let b_audio_peak = b.sources.iter().map(|s| s.audio_score(orig_lang, Some("en"))).max().unwrap_or(0);
+        if a_audio_peak != b_audio_peak {
+            return b_audio_peak.cmp(&a_audio_peak);
         }
 
         let a_peak = if a_has_direct {

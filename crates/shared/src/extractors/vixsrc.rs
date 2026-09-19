@@ -140,6 +140,9 @@ static ASN_RE: Lazy<Regex> =
     if !asn.is_empty() {
         url.push_str(&format!("&asn={asn}"));
     }
+    if !url.contains("lang=") {
+        url.push_str("&lang=en");
+    }
 
     // 3. Verify before handing it out.
     let mut h = headers();
@@ -157,7 +160,9 @@ static ASN_RE: Lazy<Regex> =
 
     let source = Source::direct_m3u8(url, if fhd { "1080p" } else { "720p" })
         .tagged("VixSrc", ID)
-        .with_referer("https://vixsrc.to/");
+        .with_referer("https://vixsrc.to/")
+        .with_audio("en", true)
+        .with_multi_audio(vec!["en".to_string(), "ita".to_string()]);
 
     Some(ProviderResult::new(NAME, ID, vec![source]))
 }
